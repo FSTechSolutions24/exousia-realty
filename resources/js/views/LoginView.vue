@@ -1,0 +1,15 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ArrowRight, CheckCircle2, Eye, EyeOff } from '@lucide/vue'
+import { useAuthStore } from '../stores/auth'
+const auth = useAuthStore(); const router = useRouter(); const route = useRoute(); const email = ref('owner@demo.exousia.test'); const password = ref('password'); const visible = ref(false); const loading = ref(false); const error = ref('')
+async function submit() { loading.value=true; error.value=''; try { await auth.login(email.value,password.value); router.replace('/') } catch(e:any) { if(e.response?.data?.verification_required){router.replace({path:'/verify-email',query:{email:e.response.data.email}});return} error.value=e.response?.data?.message || 'Unable to sign in.' } finally { loading.value=false } }
+</script>
+<template>
+  <main class="auth-layout">
+    <section class="auth-story"><div class="story-glow"></div><div class="auth-brand"><div class="brand-mark light">E</div><div><strong>EXOUSIA</strong><small>REALTY</small></div></div><div class="story-copy"><span class="eyebrow light">THE BROKERAGE OPERATING SYSTEM</span><h1>Move every opportunity<br><em>closer to home.</em></h1><p>A focused workspace for Egyptian real estate teams—from first conversation to signed deal.</p><ul><li><CheckCircle2 /> Tenant-safe customer data</li><li><CheckCircle2 /> Follow-ups that never get lost</li><li><CheckCircle2 /> Built for English and Arabic teams</li></ul></div><div class="city-lines"><i></i><i></i><i></i><i></i><i></i><i></i></div><footer>CAIRO · EGYPT <span>SECURE BY DESIGN</span></footer></section>
+    <section class="auth-panel"><div class="auth-form-wrap"><span class="eyebrow">WELCOME BACK</span><h2>Your workspace awaits.</h2><p>Sign in to continue managing your pipeline.</p><div v-if="route.query.verified === '1'" class="team-success">Your email is verified. You can sign in.</div><div v-if="route.query.reset === '1'" class="team-success">Your password has been reset. Sign in with your new password.</div><form @submit.prevent="submit"><label>Email address<input v-model="email" type="email" autocomplete="email" required></label><label>Password<div class="password-field"><input v-model="password" :type="visible?'text':'password'" autocomplete="current-password" required><button type="button" @click="visible=!visible"><EyeOff v-if="visible" :size="18"/><Eye v-else :size="18"/></button></div></label><div class="forgot-link"><RouterLink to="/forgot-password">Forgot password?</RouterLink></div><div v-if="error" class="form-error">{{ error }}</div><button class="button primary wide" :disabled="loading">{{ loading?'Signing in…':'Sign in to Exousia' }}<ArrowRight :size="18"/></button></form><div class="auth-separator"><span>NEW TO EXOUSIA?</span></div><RouterLink to="/register" class="button secondary wide">Create your brokerage workspace</RouterLink><small class="demo-note">Demo login is pre-filled after running the database seeder.</small></div>
+    </section>
+  </main>
+</template>
