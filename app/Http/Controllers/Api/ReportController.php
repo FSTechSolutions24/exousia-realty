@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Deal;
+use App\Models\DealCommission;
 use App\Models\Lead;
 use App\Models\PipelineStage;
 use App\Support\TenantContext;
@@ -97,6 +98,42 @@ class ReportController extends Controller
                 'agreed_value_minor_units' => (int) $row->agreed_value_minor_units,
             ])->values();
 
+        $commissionQuery = DealCommission::query()->where('company_id', $tenant->id())->whereBetween('created_at', [$start, $end]);
+        if (! $membership->can('view_reports')) $commissionQuery->where('company_membership_id', $membership->id);
+        $commissionSummary = (clone $commissionQuery)->selectRaw("COUNT(*) as entry_count, COALESCE(SUM(CASE WHEN status = 'pending' THEN amount_minor_units ELSE 0 END), 0) as pending_minor_units, COALESCE(SUM(CASE WHEN status = 'approved' THEN amount_minor_units ELSE 0 END), 0) as approved_minor_units, COALESCE(SUM(CASE WHEN status = 'paid' THEN amount_minor_units ELSE 0 END), 0) as paid_minor_units, COALESCE(SUM(CASE WHEN status = 'void' THEN amount_minor_units ELSE 0 END), 0) as void_minor_units")
+            ->first();
+        $commissionByEmployee = (clone $commissionQuery)->selectRaw("company_membership_id, payee_name, COUNT(*) as entry_count, COALESCE(SUM(CASE WHEN status = 'pending' THEN amount_minor_units ELSE 0 END), 0) as pending_minor_units, COALESCE(SUM(CASE WHEN status = 'approved' THEN amount_minor_units ELSE 0 END), 0) as approved_minor_units, COALESCE(SUM(CASE WHEN status = 'paid' THEN amount_minor_units ELSE 0 END), 0) as paid_minor_units")
+            ->groupBy('company_membership_id', 'payee_name')->orderByRaw('(SUM(CASE WHEN status IN (\'pending\', \'approved\', \'paid\') THEN amount_minor_units ELSE 0 END)) DESC')->get()
+            ->map(fn ($row) => [
+                'company_membership_id' => $row->company_membership_id ? (int) $row->company_membership_id : null,
+                'payee_name' => $row->payee_name,
+                'entry_count' => (int) $row->entry_count,
+                'pending_minor_units' => (int) $row->pending_minor_units,
+                'approved_minor_units' => (int) $row->approved_minor_units,
+                'paid_minor_units' => (int) $row->paid_minor_units,
+            ])->values();
+        $commissionEntries = (clone $commissionQuery)->latest('created_at')->get([
+            'id', 'deal_id', 'property_listing_id', 'company_membership_id', 'payee_name', 'unit_reference',
+            'amount_minor_units', 'calculation_type', 'rate_basis_points', 'base_amount_minor_units', 'status', 'created_at',
+        ])->map(fn (DealCommission $entry) => [
+            'id' => $entry->id, 'deal_id' => $entry->deal_id, 'property_listing_id' => $entry->property_listing_id,
+            'company_membership_id' => $entry->company_membership_id, 'payee_name' => $entry->payee_name,
+            'unit_reference' => $entry->unit_reference ?: 'Deal #'.$entry->deal_id,
+            'amount_minor_units' => (int) $entry->amount_minor_units,
+            'calculation_type' => $entry->calculation_type,
+            'rate_basis_points' => $entry->rate_basis_points,
+            'base_amount_minor_units' => $entry->base_amount_minor_units,
+            'status' => $entry->status, 'created_at' => $entry->created_at,
+        ])->values();
+        $commissionTotals = [
+            'entry_count' => (int) ($commissionSummary->entry_count ?? 0),
+            'pending_minor_units' => (int) ($commissionSummary->pending_minor_units ?? 0),
+            'approved_minor_units' => (int) ($commissionSummary->approved_minor_units ?? 0),
+            'paid_minor_units' => (int) ($commissionSummary->paid_minor_units ?? 0),
+            'void_minor_units' => (int) ($commissionSummary->void_minor_units ?? 0),
+        ];
+        $commissionTotals['eligible_minor_units'] = $commissionTotals['pending_minor_units'] + $commissionTotals['approved_minor_units'] + $commissionTotals['paid_minor_units'];
+
         $activeStatuses = ['negotiation', 'reserved', 'contracted'];
         $activeDealCount = $dealBreakdown->whereIn('status', $activeStatuses)->sum('count');
         $activeDealValue = $dealBreakdown->whereIn('status', $activeStatuses)->sum('value_minor_units');
@@ -156,6 +193,9 @@ class ReportController extends Controller
             'sources' => $sources,
             'deals_by_status' => $dealBreakdown->values(),
             'sales_performance' => $salesPerformance,
+            'commission_totals' => $commissionTotals,
+            'commissions_by_employee' => $commissionByEmployee,
+            'commission_entries' => $commissionEntries,
             'comparison' => [
                 'from' => $previousStart->toDateString(), 'to' => $previousEnd->toDateString(),
                 'metrics' => $previousMetrics,
@@ -175,6 +215,8 @@ class ReportController extends Controller
                 foreach ($payload['sources'] as $row) fputcsv($output, ['Lead source', $safe($row['source']), $row['lead_count'], $safe('Won: '.$row['won_count'].'; conversion: '.$row['conversion_rate'].'%')]);
                 foreach ($payload['deals_by_status'] as $row) fputcsv($output, ['Deal status', $safe($row['status']), $row['count'], 'Agreed value minor units: '.$row['value_minor_units']]);
                 foreach ($payload['sales_performance'] as $row) fputcsv($output, ['Sales performance', $safe($row['salesperson_name']), $row['units_sold'], 'Agreed value minor units: '.$row['agreed_value_minor_units'].'; priced deals: '.$row['priced_deals']]);
+                foreach ($payload['commissions_by_employee'] as $row) fputcsv($output, ['Employee commissions', $safe($row['payee_name']), $row['entry_count'], 'Pending: '.$row['pending_minor_units'].'; approved: '.$row['approved_minor_units'].'; paid: '.$row['paid_minor_units'].' (EGP minor units)']);
+                foreach ($payload['commission_entries'] as $row) fputcsv($output, ['Commission by unit', $safe($row['unit_reference']), $row['amount_minor_units'], $safe($row['payee_name'].'; '.$row['status'].'; '.$row['calculation_type'].'; deal #'.$row['deal_id'])]);
                 foreach ($payload['comparison']['metrics'] as $name => $value) fputcsv($output, ['Previous period metric', $safe($name), $value, '']);
                 fclose($output);
             }, 'exousia-report-'.$period.'-'.$start->format('Y-m-d').'.csv', [

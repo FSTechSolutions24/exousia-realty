@@ -26,6 +26,7 @@ class DealController extends Controller
             'lead:id,name,phone_original,assigned_to,created_by',
             'propertyListing:id,reference_code,title,location,status',
             'creator:id,name',
+            'salespersonMembership:id,user_id',
         ]);
         if (! $membership->can('view_deals')) {
             $query->whereHas('lead', fn ($leads) => $this->whereLeadVisibleTo($leads, $request));
@@ -75,7 +76,7 @@ class DealController extends Controller
     public function show(Request $request, TenantContext $tenant, int $deal)
     {
         $deal = $this->findVisibleDeal($request, $tenant, $deal);
-        return response()->json($this->serialize($deal->load(['lead', 'propertyListing', 'creator', 'activities.user:id,name']), true));
+        return response()->json($this->serialize($deal->load(['lead', 'propertyListing', 'creator', 'salespersonMembership:id,user_id', 'activities.user:id,name']), true));
     }
 
     public function update(Request $request, TenantContext $tenant, int $deal, AuditLogger $audit)
@@ -198,6 +199,8 @@ class DealController extends Controller
             'agreed_price_minor_units' => $deal->agreed_price_minor_units, 'currency' => $deal->currency,
             'notes' => $deal->notes, 'created_at' => $deal->created_at,
             'closed_at' => $deal->closed_at, 'salesperson_name' => $deal->salesperson_name,
+            'salesperson_membership_id' => $deal->salesperson_membership_id,
+            'salesperson_user_id' => $deal->salespersonMembership?->user_id,
             'lead' => $deal->lead ? ['id' => $deal->lead->id, 'name' => $deal->lead->name, 'phone' => $deal->lead->phone_original, 'assigned_to' => $deal->lead->assigned_to, 'created_by' => $deal->lead->created_by] : null,
             'property' => $deal->propertyListing ? ['id' => $deal->propertyListing->id, 'reference_code' => $deal->propertyListing->reference_code, 'title' => $deal->propertyListing->title, 'location' => $deal->propertyListing->preferredLocation?->name ?? $deal->propertyListing->location, 'status' => $deal->propertyListing->status] : null,
             'creator' => $deal->creator,

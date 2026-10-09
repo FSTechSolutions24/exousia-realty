@@ -19,11 +19,12 @@ class DealFinanceController extends Controller
 {
     public function commissions(Request $request, TenantContext $tenant, int $deal)
     {
-        abort_unless($request->attributes->get('membership')->can('view_commissions'), 403);
-        $deal = $this->findVisibleDeal($request, $tenant, $deal);
+        $membership = $request->attributes->get('membership');
+        $deal = Deal::where('company_id', $tenant->id())->findOrFail($deal);
+        $query = DealCommission::where('company_id', $tenant->id())->where('deal_id', $deal->id);
+        if (! $membership->can('view_commissions')) $query->where('company_membership_id', $membership->id);
 
-        return response()->json(DealCommission::where('company_id', $tenant->id())->where('deal_id', $deal->id)
-            ->with('membership.user:id,name')->latest()->get()->map(fn (DealCommission $entry) => $this->serializeCommission($entry)));
+        return response()->json($query->with('membership.user:id,name')->latest()->get()->map(fn (DealCommission $entry) => $this->serializeCommission($entry)));
     }
 
     public function createCommission(Request $request, TenantContext $tenant, int $deal, AuditLogger $audit)
@@ -32,19 +33,42 @@ class DealFinanceController extends Controller
         $deal = Deal::where('company_id', $tenant->id())->findOrFail($deal);
         $data = $request->validate([
             'payee_user_id' => ['required', 'integer', Rule::exists('company_memberships', 'user_id')->where('company_id', $tenant->id())->where('status', 'active')],
-            'amount_egp' => ['required', 'string', 'regex:/^\\d{1,12}(?:\\.\\d{1,2})?$/'],
+            'calculation_type' => ['sometimes', Rule::in(['fixed', 'percentage'])],
+            'amount_egp' => ['required_if:calculation_type,fixed', 'nullable', 'string', 'regex:/^\\d{1,12}(?:\\.\\d{1,2})?$/'],
+            'rate_percent' => ['required_if:calculation_type,percentage', 'nullable', 'string', 'regex:/^\\d{1,3}(?:\\.\\d{1,2})?$/'],
             'due_on' => ['nullable', 'date_format:Y-m-d'], 'reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:3000'],
         ]);
+        $calculationType = $data['calculation_type'] ?? 'fixed';
+        $baseMinor = $deal->agreed_price_minor_units;
+        $rateBasisPoints = null;
+        if ($calculationType === 'percentage') {
+            abort_unless(in_array($deal->status, ['contracted', 'closed_won'], true), 422, 'A percentage commission can only be calculated for a contracted or won deal.');
+            if (! $deal->property_listing_id) throw ValidationException::withMessages(['deal' => 'Link this deal to a property unit before calculating a percentage commission.']);
+            if (! $baseMinor || $baseMinor < 1) throw ValidationException::withMessages(['deal' => 'Enter the agreed sale value before calculating a percentage commission.']);
+            $rateBasisPoints = $this->toBasisPoints($data['rate_percent']);
+            if ($rateBasisPoints < 1 || $rateBasisPoints > 10000) throw ValidationException::withMessages(['rate_percent' => 'The commission rate must be greater than 0% and no more than 100%.']);
+            $amountMinor = intdiv(($baseMinor * $rateBasisPoints) + 5000, 10000);
+            if ($amountMinor < 1) throw ValidationException::withMessages(['rate_percent' => 'This rate is too small to produce a commission of at least EGP 0.01.']);
+        } else {
+            $amountMinor = $this->toMinorUnits($data['amount_egp']);
+        }
         $membership = CompanyMembership::where('company_id', $tenant->id())->where('user_id', $data['payee_user_id'])->where('status', 'active')->with('user:id,name')->firstOrFail();
+        $listing = $deal->property_listing_id
+            ? \App\Models\PropertyListing::where('company_id', $tenant->id())->whereKey($deal->property_listing_id)->first()
+            : null;
+        $unitReference = $listing ? trim($listing->reference_code.' · '.$listing->title, ' ·') : 'Deal #'.$deal->id.' (no unit linked)';
         $entry = DealCommission::create([
-            'company_id' => $tenant->id(), 'deal_id' => $deal->id, 'company_membership_id' => $membership->id,
-            'payee_name' => $membership->user->name, 'amount_minor_units' => $this->toMinorUnits($data['amount_egp']),
+            'company_id' => $tenant->id(), 'deal_id' => $deal->id, 'property_listing_id' => $listing?->id,
+            'unit_reference' => $unitReference, 'company_membership_id' => $membership->id,
+            'payee_name' => $membership->user->name, 'amount_minor_units' => $amountMinor,
+            'calculation_type' => $calculationType, 'rate_basis_points' => $rateBasisPoints,
+            'base_amount_minor_units' => $calculationType === 'percentage' ? $baseMinor : null,
             'currency' => 'EGP', 'status' => 'pending', 'due_on' => $data['due_on'] ?? null,
             'reference' => $data['reference'] ?? null, 'notes' => $data['notes'] ?? null,
             'created_by' => $request->user()->id,
         ]);
-        $audit->log($request, 'deal.commission_created', $entry, [], $entry->only(['deal_id', 'payee_name', 'amount_minor_units', 'currency', 'status', 'due_on', 'reference']));
+        $audit->log($request, 'deal.commission_created', $entry, [], $entry->only(['deal_id', 'property_listing_id', 'unit_reference', 'payee_name', 'amount_minor_units', 'calculation_type', 'rate_basis_points', 'base_amount_minor_units', 'currency', 'status', 'due_on', 'reference']));
 
         return response()->json($this->serializeCommission($entry->load('membership.user:id,name')), 201);
     }
@@ -128,6 +152,10 @@ class DealFinanceController extends Controller
         return [
             'id' => $entry->id, 'payee_name' => $entry->payee_name,
             'payee_user_id' => $entry->membership?->user_id,
+            'property_listing_id' => $entry->property_listing_id, 'unit_reference' => $entry->unit_reference,
+            'calculation_type' => $entry->calculation_type,
+            'rate_percent' => $entry->rate_basis_points === null ? null : intdiv($entry->rate_basis_points, 100).'.'.str_pad((string) ($entry->rate_basis_points % 100), 2, '0', STR_PAD_LEFT),
+            'base_amount_minor_units' => $entry->base_amount_minor_units,
             'amount_egp' => intdiv($entry->amount_minor_units, 100).'.'.str_pad((string) ($entry->amount_minor_units % 100), 2, '0', STR_PAD_LEFT),
             'amount_minor_units' => $entry->amount_minor_units, 'currency' => $entry->currency,
             'status' => $entry->status, 'due_on' => $entry->due_on?->format('Y-m-d'),
@@ -150,5 +178,11 @@ class DealFinanceController extends Controller
         $minor = ((int) $pounds * 100) + (int) str_pad($piastres, 2, '0');
         if ($minor < 1) throw ValidationException::withMessages(['amount_egp' => 'The commission must be greater than zero.']);
         return $minor;
+    }
+
+    private function toBasisPoints(string $percent): int
+    {
+        [$whole, $fraction] = array_pad(explode('.', $percent, 2), 2, '');
+        return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
     }
 }

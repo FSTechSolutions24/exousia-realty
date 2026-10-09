@@ -96,7 +96,8 @@ class DealApiTest extends TestCase
         [$company, $owner, $lead] = $this->workspace('owner');
         [$finance] = $this->workspaceMember($company, 'finance');
         [$agent] = $this->workspaceMember($company, 'agent');
-        $deal = Deal::create(['company_id' => $company->id, 'lead_id' => $lead->id, 'created_by' => $owner->id, 'status' => 'contracted']);
+        $listing = $this->listing($company, $owner);
+        $deal = Deal::create(['company_id' => $company->id, 'lead_id' => $lead->id, 'property_listing_id' => $listing->id, 'created_by' => $owner->id, 'status' => 'contracted', 'agreed_price_minor_units' => 100000000]);
         $this->actingAs($owner)->withHeader('X-Company-ID', $company->id);
 
         $commission = $this->postJson('/api/v1/deals/'.$deal->id.'/commissions', [
@@ -110,6 +111,14 @@ class DealApiTest extends TestCase
         $this->assertDatabaseHas('deal_commissions', ['id' => $commissionId, 'company_id' => $company->id, 'status' => 'paid']);
         $this->assertDatabaseHas('audit_logs', ['company_id' => $company->id, 'event' => 'deal.commission_status_changed', 'auditable_id' => $commissionId]);
 
+        $percentage = $this->postJson('/api/v1/deals/'.$deal->id.'/commissions', [
+            'payee_user_id' => $agent->id, 'calculation_type' => 'percentage', 'rate_percent' => '2.50',
+        ])->assertCreated()->assertJsonPath('amount_minor_units', 2500000)
+            ->assertJsonPath('calculation_type', 'percentage')->assertJsonPath('rate_percent', '2.50')
+            ->assertJsonPath('base_amount_minor_units', 100000000)
+            ->assertJsonPath('property_listing_id', $listing->id);
+        $this->assertStringContainsString($listing->reference_code, $percentage->json('unit_reference'));
+
         $document = $this->postJson('/api/v1/deals/'.$deal->id.'/documents', [
             'document' => UploadedFile::fake()->create('sale-contract.pdf', 45, 'application/pdf'), 'category' => 'contract',
         ])->assertCreated()->assertJsonPath('category', 'contract');
@@ -120,9 +129,22 @@ class DealApiTest extends TestCase
         $this->get($document->json('url'))->assertOk()->assertHeader('content-disposition');
 
         $this->actingAs($finance)->withHeader('X-Company-ID', $company->id)
-            ->getJson('/api/v1/deals/'.$deal->id.'/commissions')->assertOk()->assertJsonCount(1);
+            ->getJson('/api/v1/deals/'.$deal->id.'/commissions')->assertOk()->assertJsonCount(2);
         $this->actingAs($agent)->withHeader('X-Company-ID', $company->id)
-            ->getJson('/api/v1/deals/'.$deal->id.'/commissions')->assertForbidden();
+            ->getJson('/api/v1/deals/'.$deal->id.'/commissions')->assertOk()->assertJsonCount(1)
+            ->assertJsonPath('0.payee_name', $agent->name);
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)
+            ->getJson('/api/v1/reports?period=year')->assertOk()
+            ->assertJsonPath('commission_totals.entry_count', 2)
+            ->assertJsonPath('commission_totals.pending_minor_units', 2500000)
+            ->assertJsonPath('commission_entries.0.property_listing_id', $listing->id);
+        $this->actingAs($agent)->withHeader('X-Company-ID', $company->id)
+            ->getJson('/api/v1/reports?period=year')->assertOk()
+            ->assertJsonPath('commission_totals.entry_count', 1)
+            ->assertJsonPath('commission_totals.pending_minor_units', 2500000)
+            ->assertJsonPath('commissions_by_employee.0.payee_name', $agent->name)
+            ->assertJsonCount(1, 'commission_entries')
+            ->assertJsonPath('commission_entries.0.unit_reference', $percentage->json('unit_reference'));
         $this->postJson('/api/v1/deals/'.$deal->id.'/commissions', [
             'payee_user_id' => $agent->id, 'amount_egp' => '100',
         ])->assertForbidden();
