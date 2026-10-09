@@ -10,11 +10,14 @@ class Deal extends Model
         'company_id', 'lead_id', 'property_listing_id', 'created_by', 'status',
         'expected_close_date', 'agreed_price_minor_units', 'currency', 'notes',
         'closed_at', 'salesperson_membership_id', 'salesperson_name',
+        'amount_received_minor_units', 'payment_method', 'payment_reference', 'payment_received_on', 'payment_terms',
     ];
 
     protected $casts = [
         'expected_close_date' => 'date:Y-m-d',
         'agreed_price_minor_units' => 'integer',
+        'amount_received_minor_units' => 'integer',
+        'payment_received_on' => 'date:Y-m-d',
         'closed_at' => 'datetime',
     ];
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\BootstrapController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DealController;
 use App\Http\Controllers\Api\DealFinanceController;
+use App\Http\Controllers\Api\CommissionController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadImportController;
 use App\Http\Controllers\Api\InvitationAcceptanceController;
@@ -64,6 +65,10 @@ Route::prefix('v1')->middleware('web')->group(function () {
             Route::post('/deals/{deal}/documents', [DealFinanceController::class, 'uploadDocument']);
             Route::get('/deals/{deal}/documents/{document}', [DealFinanceController::class, 'downloadDocument'])->name('deals.documents.download');
             Route::get('/reports', ReportController::class);
+            Route::get('/commissions', [CommissionController::class, 'index']);
+            Route::get('/commissions/{commission}', [CommissionController::class, 'show']);
+            Route::post('/commissions/{commission}/signed-document', [CommissionController::class, 'uploadSignedDocument']);
+            Route::get('/commissions/{commission}/signed-document', [CommissionController::class, 'downloadSignedDocument'])->name('commissions.signed-document');
             Route::get('/leads', [LeadController::class, 'index']);
             Route::post('/leads', [LeadController::class, 'store']);
             Route::post('/leads/bulk', [LeadController::class, 'bulk']);

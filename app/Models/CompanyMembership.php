@@ -24,8 +24,8 @@ class CompanyMembership extends Model
         }
 
         $defaults = [
-            'manager' => ['view_team', 'view_inventory', 'manage_inventory', 'view_all_leads', 'create_leads', 'update_leads', 'archive_leads', 'reassign_leads', 'manage_tasks', 'view_deals', 'manage_deals', 'view_reports'],
-            'agent' => ['view_team', 'view_inventory', 'view_own_leads', 'create_leads', 'update_own_leads', 'manage_own_tasks', 'view_own_deals', 'create_deals', 'update_own_deals', 'view_own_reports'],
+            'manager' => ['view_team', 'view_inventory', 'manage_inventory', 'view_all_leads', 'create_leads', 'update_leads', 'archive_leads', 'reassign_leads', 'manage_tasks', 'view_deals', 'manage_deals', 'view_reports', 'view_commissions'],
+            'agent' => ['view_team', 'view_inventory', 'view_own_leads', 'create_leads', 'update_own_leads', 'manage_own_tasks', 'view_own_deals', 'create_deals', 'update_own_deals', 'view_own_reports', 'view_own_commissions'],
             'operations' => ['view_team', 'view_inventory', 'manage_inventory', 'view_all_leads', 'create_leads', 'update_leads', 'archive_leads', 'manage_tasks', 'view_deals', 'manage_deals', 'export_data'],
             'finance' => ['view_team', 'view_deals', 'view_commissions', 'manage_commissions', 'view_reports'],
         ];

@@ -18,4 +18,6 @@ class DealCommission extends Model
     public function membership() { return $this->belongsTo(CompanyMembership::class, 'company_membership_id'); }
     public function creator() { return $this->belongsTo(User::class, 'created_by'); }
     public function propertyListing() { return $this->belongsTo(PropertyListing::class, 'property_listing_id')->withTrashed(); }
+    public function signedDocuments() { return $this->hasMany(DealCommissionDocument::class, 'deal_commission_id')->latest(); }
+    public function currentSignedDocument() { return $this->hasOne(DealCommissionDocument::class, 'deal_commission_id')->where('is_current', true)->where('mime_type', 'application/pdf')->latestOfMany(); }
 }

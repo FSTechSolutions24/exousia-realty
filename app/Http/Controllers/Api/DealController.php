@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Deal;
 use App\Models\DealActivity;
+use App\Models\DealDocument;
 use App\Models\Lead;
 use App\Models\PropertyListing;
 use App\Services\AuditLogger;
@@ -51,6 +52,9 @@ class DealController extends Controller
         $membership = $request->attributes->get('membership');
         abort_unless($membership->can('manage_deals') || $membership->can('create_deals'), 403);
         $data = $this->validateDeal($request, $tenant);
+        if (($data['status'] ?? null) === 'closed_won') {
+            throw ValidationException::withMessages(['status' => 'Create the deal first, attach its signed contract PDF, then close it with payment details.']);
+        }
         $lead = Lead::where('company_id', $tenant->id())->findOrFail($data['lead_id']);
         $this->authorizeLead($request, $lead);
         $this->authorizeListing($tenant, $data['property_listing_id'] ?? null);
@@ -61,6 +65,10 @@ class DealController extends Controller
             $data['agreed_price_minor_units'] = null;
         }
         unset($data['agreed_price_egp']);
+        if (array_key_exists('amount_received_egp', $data)) {
+            $data['amount_received_minor_units'] = $data['amount_received_egp'] === null ? null : $this->toMinorUnitsAllowZero($data['amount_received_egp']);
+            unset($data['amount_received_egp']);
+        }
         if (($data['status'] ?? null) === 'closed_won') {
             $data += $this->salesAttribution($lead, $tenant->id(), $request->user()->id);
             $data['closed_at'] = now();
@@ -93,6 +101,16 @@ class DealController extends Controller
             $data['agreed_price_minor_units'] = $data['agreed_price_egp'] === null ? null : $this->toMinorUnits($data['agreed_price_egp']);
             unset($data['agreed_price_egp']);
         }
+        if (array_key_exists('amount_received_egp', $data)) {
+            $data['amount_received_minor_units'] = $data['amount_received_egp'] === null ? null : $this->toMinorUnitsAllowZero($data['amount_received_egp']);
+            unset($data['amount_received_egp']);
+        }
+
+        $closing = ($data['status'] ?? $deal->status) === 'closed_won' && $deal->status !== 'closed_won';
+        if ($closing) {
+            abort_unless($membership->can('manage_deals'), 403, 'Only workspace management can close a deal as won.');
+            $this->validateClosingRequirements($data, $deal, $tenant->id());
+        }
 
         $old = $deal->getAttributes();
         if (($data['status'] ?? null) === 'closed_won' && $deal->status !== 'closed_won') {
@@ -104,7 +122,7 @@ class DealController extends Controller
         $deal->fill($data)->save();
         $changes = $deal->getChanges();
         if ($changes) {
-            $loggedKeys = ['property_listing_id', 'status', 'expected_close_date', 'agreed_price_minor_units'];
+            $loggedKeys = ['property_listing_id', 'status', 'expected_close_date', 'agreed_price_minor_units', 'amount_received_minor_units', 'payment_method', 'payment_reference', 'payment_received_on', 'payment_terms'];
             $oldValues = array_intersect_key($old, array_flip(array_intersect(array_keys($changes), $loggedKeys)));
             $newValues = array_intersect_key($changes, array_flip($loggedKeys));
             if (array_key_exists('notes', $changes)) $newValues['notes_changed'] = true;
@@ -124,8 +142,42 @@ class DealController extends Controller
             'status' => [$partial ? 'sometimes' : 'required', Rule::in(self::STATUSES)],
             'expected_close_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'agreed_price_egp' => ['sometimes', 'nullable', 'string', 'regex:/^\d{1,12}(?:\.\d{1,2})?$/'],
+            'amount_received_egp' => ['sometimes', 'nullable', 'string', 'regex:/^\d{1,12}(?:\.\d{1,2})?$/'],
+            'payment_method' => ['sometimes', 'nullable', Rule::in(['cash', 'bank_transfer', 'cheque', 'financing', 'other'])],
+            'payment_reference' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'payment_received_on' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'payment_terms' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'notes' => ['sometimes', 'nullable', 'string', 'max:10000'],
         ]);
+    }
+
+    private function validateClosingRequirements(array $data, Deal $deal, int $companyId): void
+    {
+        $agreed = array_key_exists('agreed_price_minor_units', $data) ? $data['agreed_price_minor_units'] : $deal->agreed_price_minor_units;
+        $received = array_key_exists('amount_received_minor_units', $data) ? $data['amount_received_minor_units'] : $deal->amount_received_minor_units;
+        $method = array_key_exists('payment_method', $data) ? $data['payment_method'] : $deal->payment_method;
+        $receivedOn = array_key_exists('payment_received_on', $data) ? $data['payment_received_on'] : $deal->payment_received_on;
+
+        if (! $agreed || $agreed < 1) {
+            throw ValidationException::withMessages(['agreed_price_egp' => 'Enter the agreed purchase price before closing this deal.']);
+        }
+        if ($received === null) {
+            throw ValidationException::withMessages(['amount_received_egp' => 'Enter the amount received so the remaining balance can be recorded.']);
+        }
+        if ($received > $agreed) {
+            throw ValidationException::withMessages(['amount_received_egp' => 'The amount received cannot exceed the agreed purchase price.']);
+        }
+        if (! $method) {
+            throw ValidationException::withMessages(['payment_method' => 'Select the payment method before closing this deal.']);
+        }
+        if ($received > 0 && ! $receivedOn) {
+            throw ValidationException::withMessages(['payment_received_on' => 'Enter the date the payment was received.']);
+        }
+        $hasSignedContract = DealDocument::where('company_id', $companyId)
+            ->where('deal_id', $deal->id)->where('category', 'signed_contract')->exists();
+        if (! $hasSignedContract) {
+            throw ValidationException::withMessages(['signed_contract' => 'Upload the signed contract PDF before closing this deal.']);
+        }
     }
 
     private function authorizeListing(TenantContext $tenant, mixed $listingId): void
@@ -197,6 +249,11 @@ class DealController extends Controller
             'expected_close_date' => $deal->expected_close_date?->format('Y-m-d'),
             'agreed_price_egp' => $deal->agreed_price_minor_units === null ? null : $this->fromMinorUnits($deal->agreed_price_minor_units),
             'agreed_price_minor_units' => $deal->agreed_price_minor_units, 'currency' => $deal->currency,
+            'amount_received_egp' => $deal->amount_received_minor_units === null ? null : $this->fromMinorUnits($deal->amount_received_minor_units),
+            'amount_received_minor_units' => $deal->amount_received_minor_units,
+            'balance_due_minor_units' => $deal->agreed_price_minor_units === null ? null : max(0, $deal->agreed_price_minor_units - ($deal->amount_received_minor_units ?? 0)),
+            'payment_method' => $deal->payment_method, 'payment_reference' => $deal->payment_reference,
+            'payment_received_on' => $deal->payment_received_on?->format('Y-m-d'), 'payment_terms' => $deal->payment_terms,
             'notes' => $deal->notes, 'created_at' => $deal->created_at,
             'closed_at' => $deal->closed_at, 'salesperson_name' => $deal->salesperson_name,
             'salesperson_membership_id' => $deal->salesperson_membership_id,
@@ -217,5 +274,11 @@ class DealController extends Controller
     private function fromMinorUnits(int $minor): string
     {
         return intdiv($minor, 100).'.'.str_pad((string) ($minor % 100), 2, '0', STR_PAD_LEFT);
+    }
+
+    private function toMinorUnitsAllowZero(string $amount): int
+    {
+        [$pounds, $piastres] = array_pad(explode('.', $amount, 2), 2, '');
+        return ((int) $pounds * 100) + (int) str_pad($piastres, 2, '0');
     }
 }

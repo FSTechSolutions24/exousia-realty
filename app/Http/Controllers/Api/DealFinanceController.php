@@ -79,9 +79,12 @@ class DealFinanceController extends Controller
         $deal = Deal::where('company_id', $tenant->id())->findOrFail($deal);
         $entry = DealCommission::where('company_id', $tenant->id())->where('deal_id', $deal->id)->findOrFail($commission);
         $data = $request->validate(['status' => ['required', Rule::in(['approved', 'paid', 'void'])]]);
-        $transitions = ['pending' => ['approved', 'paid', 'void'], 'approved' => ['paid', 'void'], 'paid' => [], 'void' => []];
+        $transitions = ['pending' => ['approved', 'void'], 'approved' => ['paid', 'void'], 'paid' => [], 'void' => []];
         if (! in_array($data['status'], $transitions[$entry->status] ?? [], true)) {
             throw ValidationException::withMessages(['status' => 'This commission status cannot be changed from its current state.']);
+        }
+        if ($data['status'] === 'paid' && ! $entry->currentSignedDocument()->exists()) {
+            throw ValidationException::withMessages(['signed_document' => 'Upload the employee-signed payment order before marking this commission as paid.']);
         }
         $old = $entry->status;
         $entry->status = $data['status'];
@@ -104,14 +107,21 @@ class DealFinanceController extends Controller
         $this->authorizeManageDeal($request, $deal);
         $data = $request->validate([
             'document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:20480'],
-            'category' => ['sometimes', Rule::in(['contract', 'reservation', 'identity', 'other'])],
+            'category' => ['sometimes', Rule::in(['signed_contract', 'contract', 'reservation', 'identity', 'other'])],
         ]);
         $file = $data['document'];
+        $category = $data['category'] ?? 'contract';
+        if ($category === 'signed_contract') {
+            abort_unless($request->attributes->get('membership')->can('manage_deals'), 403, 'Only workspace management can attach an executed sale contract.');
+        }
+        if ($category === 'signed_contract' && $file->getMimeType() !== 'application/pdf') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['document' => 'A signed deal contract must be uploaded as a PDF.']);
+        }
         $filename = Str::uuid().'.'.$file->extension();
         $path = $file->storeAs("companies/{$tenant->id()}/deals/{$deal->id}/documents", $filename, 'private');
         $document = DealDocument::create([
             'company_id' => $tenant->id(), 'deal_id' => $deal->id, 'uploaded_by' => $request->user()->id,
-            'category' => $data['category'] ?? 'contract', 'original_name' => mb_substr(basename($file->getClientOriginalName()), 0, 255),
+            'category' => $category, 'original_name' => mb_substr(basename($file->getClientOriginalName()), 0, 255),
             'storage_path' => $path, 'mime_type' => $file->getMimeType(), 'size_bytes' => $file->getSize(),
         ]);
         $audit->log($request, 'deal.document_uploaded', $document, [], ['deal_id' => $deal->id, 'category' => $document->category, 'mime_type' => $document->mime_type, 'size_bytes' => $document->size_bytes]);
@@ -149,8 +159,10 @@ class DealFinanceController extends Controller
 
     private function serializeCommission(DealCommission $entry): array
     {
+        $entry->loadMissing(['currentSignedDocument', 'deal']);
+        $signedDocument = $entry->currentSignedDocument;
         return [
-            'id' => $entry->id, 'payee_name' => $entry->payee_name,
+            'id' => $entry->id, 'deal_id' => $entry->deal_id, 'payee_name' => $entry->payee_name,
             'payee_user_id' => $entry->membership?->user_id,
             'property_listing_id' => $entry->property_listing_id, 'unit_reference' => $entry->unit_reference,
             'calculation_type' => $entry->calculation_type,
@@ -160,6 +172,12 @@ class DealFinanceController extends Controller
             'amount_minor_units' => $entry->amount_minor_units, 'currency' => $entry->currency,
             'status' => $entry->status, 'due_on' => $entry->due_on?->format('Y-m-d'),
             'paid_at' => $entry->paid_at, 'reference' => $entry->reference, 'notes' => $entry->notes,
+            'signed_document' => $signedDocument ? [
+                'id' => $signedDocument->id, 'original_name' => $signedDocument->original_name,
+                'mime_type' => $signedDocument->mime_type, 'size_bytes' => $signedDocument->size_bytes,
+                'uploaded_at' => $signedDocument->created_at,
+                'url' => route('commissions.signed-document', ['commission' => $entry->id]),
+            ] : null,
         ];
     }
 

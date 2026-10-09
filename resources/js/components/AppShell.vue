@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Building2, ChevronDown, CircleHelp, ClipboardCheck, LayoutDashboard, MapPinned, Menu, Search, Settings, Sparkles, Users, WalletCards, X } from '@lucide/vue'
+import { BadgeCheck, Building2, ChevronDown, CircleHelp, ClipboardCheck, LayoutDashboard, MapPinned, Menu, Search, Settings, Sparkles, Users, WalletCards, X } from '@lucide/vue'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from '../i18n'
 import { useTasksStore } from '../stores/tasks'
@@ -10,10 +10,11 @@ const auth = useAuthStore(); const tasks = useTasksStore(); const route = useRou
 const mobileOpen = ref(false); const profileOpen = ref(false)
 const nav = [
   ['/', LayoutDashboard, 'dashboard'], ['/leads', Users, 'leads'], ['/tasks', ClipboardCheck, 'tasks'],
-  ['/inventory', Building2, 'inventory'], ['/deals', WalletCards, 'deals'], ['/reports', Sparkles, 'reports'], ['/settings/locations', MapPinned, 'locations'], ['/team', Settings, 'team'],
+  ['/inventory', Building2, 'inventory'], ['/deals', WalletCards, 'deals'], ['/commissions', BadgeCheck, 'commissions'], ['/reports', Sparkles, 'reports'], ['/settings/locations', MapPinned, 'locations'], ['/team', Settings, 'team'],
 ] as const
 const canViewReports = computed(() => ['owner', 'admin', 'manager', 'finance', 'agent'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.some(permission => ['view_reports', 'view_own_reports'].includes(permission)))
-const visibleNav = computed(() => nav.filter(([path]) => path !== '/reports' || canViewReports.value))
+const canViewCommissions = computed(() => ['owner', 'admin', 'manager', 'finance', 'agent'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.some(permission => ['view_commissions', 'view_own_commissions'].includes(permission)))
+const visibleNav = computed(() => nav.filter(([path]) => path !== '/reports' || canViewReports.value).filter(([path]) => path !== '/commissions' || canViewCommissions.value))
 const companyId = computed(() => auth.bootstrap?.company.id)
 function isActive(path: string) { return path === '/' ? route.path === '/' : route.path.startsWith(path) }
 async function logout() { await auth.logout(); router.replace('/login') }

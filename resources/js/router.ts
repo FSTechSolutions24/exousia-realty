@@ -15,6 +15,9 @@ import VerifyEmailView from './views/VerifyEmailView.vue'
 import InventoryView from './views/InventoryView.vue'
 import DealsView from './views/DealsView.vue'
 import ReportsView from './views/ReportsView.vue'
+import CommissionsView from './views/CommissionsView.vue'
+import CommissionOrderView from './views/CommissionOrderView.vue'
+import DealClosingDocumentView from './views/DealClosingDocumentView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -31,6 +34,9 @@ const router = createRouter({
     { path: '/tasks', component: TasksView },
     { path: '/inventory', component: InventoryView },
     { path: '/deals', component: DealsView },
+    { path: '/deals/:id/closing-document', component: DealClosingDocumentView },
+    { path: '/commissions', component: CommissionsView },
+    { path: '/commissions/:id/order', component: CommissionOrderView },
     { path: '/reports', component: ReportsView },
     { path: '/settings/locations', component: PreferredLocationsView },
     { path: '/team', component: TeamView },

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Company;
 use App\Models\Deal;
 use App\Models\DealDocument;
+use App\Models\DealCommissionDocument;
 use App\Models\Lead;
 use App\Models\PipelineStage;
 use App\Models\PropertyListing;
@@ -34,8 +35,32 @@ class DealApiTest extends TestCase
         $dealId = $created->json('id');
         $this->putJson('/api/v1/deals/'.$dealId, ['status' => 'reserved', 'agreed_price_egp' => '7100000'])
             ->assertOk()->assertJsonPath('status', 'reserved')->assertJsonPath('agreed_price_minor_units', 710000000);
-        $closed = $this->putJson('/api/v1/deals/'.$dealId, ['status' => 'closed_won'])->assertOk()
-            ->assertJsonPath('salesperson_name', $owner->name);
+        $this->putJson('/api/v1/deals/'.$dealId, [
+            'status' => 'closed_won', 'amount_received_egp' => '2000000', 'payment_method' => 'bank_transfer',
+            'payment_received_on' => '2026-10-09', 'payment_reference' => 'TRX-1009', 'payment_terms' => 'Balance due on handover.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('signed_contract');
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)
+            ->postJson('/api/v1/deals/'.$dealId.'/documents', [
+                'document' => UploadedFile::fake()->image('contract-signature.png'), 'category' => 'signed_contract',
+            ])->assertUnprocessable()->assertJsonValidationErrors('document');
+        $this->postJson('/api/v1/deals/'.$dealId.'/documents', [
+            'document' => UploadedFile::fake()->create('executed-sale-contract.pdf', 60, 'application/pdf'),
+            'category' => 'signed_contract',
+        ])->assertCreated()->assertJsonPath('category', 'signed_contract');
+        $this->putJson('/api/v1/deals/'.$dealId, [
+            'status' => 'closed_won', 'amount_received_egp' => '7200000', 'payment_method' => 'cash',
+            'payment_received_on' => '2026-10-09',
+        ])->assertUnprocessable()->assertJsonValidationErrors('amount_received_egp');
+        $this->putJson('/api/v1/deals/'.$dealId, [
+            'status' => 'closed_won', 'amount_received_egp' => '0', 'payment_method' => null,
+        ])->assertUnprocessable()->assertJsonValidationErrors('payment_method');
+        $closed = $this->putJson('/api/v1/deals/'.$dealId, [
+            'status' => 'closed_won', 'amount_received_egp' => '2000000', 'payment_method' => 'bank_transfer',
+            'payment_received_on' => '2026-10-09', 'payment_reference' => 'TRX-1009', 'payment_terms' => 'Balance due on handover.',
+        ])->assertOk()->assertJsonPath('salesperson_name', $owner->name)
+            ->assertJsonPath('amount_received_minor_units', 200000000)
+            ->assertJsonPath('balance_due_minor_units', 510000000)
+            ->assertJsonPath('payment_method', 'bank_transfer');
         $this->assertNotNull($closed->json('closed_at'));
         $this->assertDatabaseHas('deals', [
             'id' => $dealId,
@@ -61,6 +86,7 @@ class DealApiTest extends TestCase
             ->getJson('/api/v1/deals')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $ownDeal->id);
         $this->getJson('/api/v1/deals/'.$otherDeal->id)->assertNotFound();
         $this->putJson('/api/v1/deals/'.$otherDeal->id, ['status' => 'closed_won'])->assertNotFound();
+        $this->putJson('/api/v1/deals/'.$ownDeal->id, ['status' => 'closed_won', 'agreed_price_egp' => '100', 'amount_received_egp' => '0', 'payment_method' => 'cash'])->assertForbidden();
         $this->postJson('/api/v1/deals', ['lead_id' => $otherLead->id, 'status' => 'negotiation'])->assertNotFound();
     }
 
@@ -105,6 +131,33 @@ class DealApiTest extends TestCase
         ])->assertCreated()->assertJsonPath('amount_minor_units', 1250050)->assertJsonPath('status', 'pending');
         $commissionId = $commission->json('id');
         $this->patchJson('/api/v1/deals/'.$deal->id.'/commissions/'.$commissionId, ['status' => 'paid'])
+            ->assertUnprocessable()->assertJsonValidationErrors('status');
+        $this->patchJson('/api/v1/deals/'.$deal->id.'/commissions/'.$commissionId, ['status' => 'approved'])
+            ->assertOk()->assertJsonPath('status', 'approved');
+        $this->postJson('/api/v1/commissions/'.$commissionId.'/signed-document', [
+            'signed_document' => UploadedFile::fake()->image('signed-order.png'),
+        ])->assertUnprocessable()->assertJsonValidationErrors('signed_document');
+        $legacyImage = DealCommissionDocument::create([
+            'company_id' => $company->id, 'deal_commission_id' => $commissionId, 'uploaded_by' => $owner->id,
+            'original_name' => 'legacy-signed-order.png', 'storage_path' => 'companies/'.$company->id.'/commissions/'.$commissionId.'/legacy.png',
+            'mime_type' => 'image/png', 'size_bytes' => 100, 'is_current' => true,
+        ]);
+        $this->patchJson('/api/v1/deals/'.$deal->id.'/commissions/'.$commissionId, ['status' => 'paid'])
+            ->assertUnprocessable()->assertJsonValidationErrors('signed_document');
+        $this->postJson('/api/v1/commissions/'.$commissionId.'/signed-document', [
+            'signed_document' => UploadedFile::fake()->create('signed-order.pdf', 60, 'application/pdf'),
+        ])->assertCreated()->assertJsonPath('signed_document.original_name', 'signed-order.pdf');
+        $signedDocument = DealCommissionDocument::where('deal_commission_id', $commissionId)->where('is_current', true)->firstOrFail();
+        $this->assertStringStartsWith('companies/'.$company->id.'/commissions/'.$commissionId.'/signed/', $signedDocument->storage_path);
+        $this->assertDatabaseHas('deal_commission_documents', ['id' => $legacyImage->id, 'is_current' => false]);
+        Storage::disk('private')->assertExists($signedDocument->storage_path);
+        $this->get('/api/v1/commissions/'.$commissionId.'/signed-document')->assertOk()->assertHeader('content-disposition');
+        $this->postJson('/api/v1/commissions/'.$commissionId.'/signed-document', [
+            'signed_document' => UploadedFile::fake()->create('signed-order-revised.pdf', 65, 'application/pdf'),
+        ])->assertCreated()->assertJsonPath('signed_document.original_name', 'signed-order-revised.pdf');
+        $this->assertDatabaseHas('deal_commission_documents', ['id' => $signedDocument->id, 'is_current' => false]);
+        $this->assertDatabaseCount('deal_commission_documents', 3);
+        $this->patchJson('/api/v1/deals/'.$deal->id.'/commissions/'.$commissionId, ['status' => 'paid'])
             ->assertOk()->assertJsonPath('status', 'paid');
         $this->patchJson('/api/v1/deals/'.$deal->id.'/commissions/'.$commissionId, ['status' => 'void'])
             ->assertUnprocessable()->assertJsonValidationErrors('status');
@@ -133,6 +186,10 @@ class DealApiTest extends TestCase
         $this->actingAs($agent)->withHeader('X-Company-ID', $company->id)
             ->getJson('/api/v1/deals/'.$deal->id.'/commissions')->assertOk()->assertJsonCount(1)
             ->assertJsonPath('0.payee_name', $agent->name);
+        $this->get('/api/v1/commissions/'.$commissionId.'/signed-document')->assertNotFound();
+        $this->postJson('/api/v1/commissions/'.$percentage->json('id').'/signed-document', [
+            'signed_document' => UploadedFile::fake()->image('agent-upload.png'),
+        ])->assertForbidden();
         $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)
             ->getJson('/api/v1/reports?period=year')->assertOk()
             ->assertJsonPath('commission_totals.entry_count', 2)

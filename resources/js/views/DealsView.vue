@@ -8,7 +8,7 @@ import Modal from '../components/Modal.vue'
 interface DealLead { id: number; name: string; phone: string; assigned_to: number | null; created_by: number }
 interface DealProperty { id: number; title: string; reference_code: string; location: string; status: string }
 interface DealActivity { id: number; event: string; old_values: Record<string, unknown> | null; new_values: Record<string, unknown> | null; occurred_at: string; user?: { name: string } | null }
-interface Deal { id: number; status: string; expected_close_date: string | null; agreed_price_egp: string | null; agreed_price_minor_units: number | null; salesperson_membership_id?: number | null; salesperson_user_id?: number | null; notes: string | null; lead: DealLead; property: DealProperty | null; activities?: DealActivity[] }
+interface Deal { id: number; status: string; expected_close_date: string | null; agreed_price_egp: string | null; agreed_price_minor_units: number | null; amount_received_egp: string | null; amount_received_minor_units: number | null; balance_due_minor_units: number | null; payment_method: string | null; payment_reference: string | null; payment_received_on: string | null; payment_terms: string | null; salesperson_membership_id?: number | null; salesperson_user_id?: number | null; notes: string | null; lead: DealLead; property: DealProperty | null; activities?: DealActivity[] }
 interface LeadOption { id: number; name: string; phone_original: string; assigned_to: number | null; created_by: number }
 interface PropertyOption { id: number; title: string; reference_code: string; location: string; status: string }
 interface CommissionEntry { id: number; payee_name: string; payee_user_id: number | null; amount_egp: string; status: string; due_on: string | null; paid_at: string | null; reference: string | null; unit_reference: string; calculation_type: string; rate_percent: string | null; base_amount_minor_units: number | null }
@@ -34,7 +34,7 @@ const documents = ref<DealDocument[]>([])
 const financeError = ref('')
 const commissionSaving = ref(false)
 const commissionForm = reactive({ payee_user_id: '' as number | '', calculation_type: 'fixed', rate_percent: '', amount_egp: '', due_on: '', reference: '' })
-const form = reactive({ lead_id: '' as number | '', property_listing_id: '' as number | '', status: 'negotiation', expected_close_date: '', agreed_price_egp: '', notes: '' })
+const form = reactive({ lead_id: '' as number | '', property_listing_id: '' as number | '', status: 'negotiation', expected_close_date: '', agreed_price_egp: '', amount_received_egp: '', payment_method: '', payment_reference: '', payment_received_on: '', payment_terms: '', notes: '' })
 const statuses = ['negotiation', 'reserved', 'contracted', 'closed_won', 'closed_lost']
 let searchTimer: number | undefined
 
@@ -44,7 +44,10 @@ const canEditDeal = (deal: Deal) => ['owner', 'admin', 'manager', 'operations'].
 const canEditActive = computed(() => editingId.value ? !!activeDeal.value && canEditDeal(activeDeal.value) : canCreate.value)
 const canViewCommissions = computed(() => ['owner', 'admin', 'finance', 'manager', 'agent'].includes(role.value) || !!auth.bootstrap?.membership.permissions.includes('view_commissions'))
 const canManageCommissions = computed(() => ['owner', 'admin', 'finance'].includes(role.value) || !!auth.bootstrap?.membership.permissions.includes('manage_commissions'))
+const canCloseDeals = computed(() => ['owner', 'admin', 'manager', 'operations'].includes(role.value) || !!auth.bootstrap?.membership.permissions.includes('manage_deals'))
 const canCalculateCommission = computed(() => !!activeDeal.value?.property && ['contracted', 'closed_won'].includes(activeDeal.value.status) && Number(activeDeal.value.agreed_price_egp || 0) > 0)
+const hasSignedContract = computed(() => documents.value.some(document => document.category === 'signed_contract'))
+const outstandingBalance = computed(() => Math.max(0, Math.round((Number(form.agreed_price_egp || 0) - Number(form.amount_received_egp || 0)) * 100)))
 const commissionEstimate = computed(() => canCalculateCommission.value && commissionForm.calculation_type === 'percentage' && Number(commissionForm.rate_percent) > 0
   ? new Intl.NumberFormat('en-EG', { style: 'currency', currency: 'EGP', maximumFractionDigits: 2 }).format(Number(activeDeal.value?.agreed_price_egp || 0) * Number(commissionForm.rate_percent || 0) / 100)
   : '')
@@ -81,7 +84,7 @@ async function loadOptions() {
 }
 
 function resetForm() {
-  Object.assign(form, { lead_id: '', property_listing_id: '', status: 'negotiation', expected_close_date: '', agreed_price_egp: '', notes: '' })
+  Object.assign(form, { lead_id: '', property_listing_id: '', status: 'negotiation', expected_close_date: '', agreed_price_egp: '', amount_received_egp: '', payment_method: '', payment_reference: '', payment_received_on: '', payment_terms: '', notes: '' })
   editingId.value = null
   activeDeal.value = null
   history.value = []
@@ -103,6 +106,8 @@ async function openDeal(deal: Deal) {
     Object.assign(form, {
       lead_id: data.lead.id, property_listing_id: data.property?.id || '', status: data.status,
       expected_close_date: data.expected_close_date || '', agreed_price_egp: data.agreed_price_egp || '', notes: data.notes || '',
+      amount_received_egp: data.amount_received_egp || '0', payment_method: data.payment_method || '',
+      payment_reference: data.payment_reference || '', payment_received_on: data.payment_received_on || '', payment_terms: data.payment_terms || '',
     })
     showEditor.value = true
     financeError.value = ''
@@ -148,7 +153,7 @@ async function changeCommission(entry: CommissionEntry, status: string) {
   } catch (exception: any) { financeError.value = exception.response?.data?.message || 'Unable to update this commission.' }
 }
 
-async function uploadDocument(event: Event) {
+async function uploadDocument(event: Event, category = 'contract') {
   if (!activeDeal.value) return
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -156,13 +161,17 @@ async function uploadDocument(event: Event) {
   financeError.value = ''
   const formData = new FormData()
   formData.append('document', file)
-  formData.append('category', 'contract')
+  formData.append('category', category)
   try {
     await api.post(`/deals/${activeDeal.value.id}/documents`, formData)
     documents.value = (await api.get(`/deals/${activeDeal.value.id}/documents`)).data
   } catch (exception: any) {
     financeError.value = Object.values(exception.response?.data?.errors || { error: [exception.response?.data?.message || 'Unable to upload this document.'] }).flat().join(' ')
   } finally { input.value = '' }
+}
+
+function printClosingStatement() {
+  if (activeDeal.value) window.open(`/deals/${activeDeal.value.id}/closing-document`, '_blank', 'noopener')
 }
 
 async function save() {
@@ -174,6 +183,11 @@ async function save() {
     status: form.status,
     expected_close_date: form.expected_close_date || null,
     agreed_price_egp: form.agreed_price_egp || null,
+    amount_received_egp: form.amount_received_egp === '' ? null : form.amount_received_egp,
+    payment_method: form.payment_method || null,
+    payment_reference: form.payment_reference || null,
+    payment_received_on: form.payment_received_on || null,
+    payment_terms: form.payment_terms || null,
     notes: form.notes || null,
   }
   try {
@@ -211,9 +225,21 @@ onMounted(() => { load(); loadOptions() })
       <form class="form-grid deal-form" @submit.prevent="save">
         <label class="full">Lead<select v-model="form.lead_id" :disabled="!!editingId || !canEditActive" required><option value="" disabled>Select a lead</option><option v-for="lead in leadOptions" :key="lead.id" :value="lead.id">{{ lead.name }} Â· {{ lead.phone_original }}</option><option v-if="activeDeal && !leadOptions.some(lead => lead.id === form.lead_id)" :value="form.lead_id">{{ activeDeal.lead.name }}</option></select></label>
         <label class="full">Property listing<select v-model="form.property_listing_id" :disabled="!canEditActive"><option value="">No property linked yet</option><option v-for="property in propertyOptions" :key="property.id" :value="property.id">{{ property.title }} Â· {{ property.reference_code }} ({{ property.location }})</option><option v-if="activeDeal?.property && !propertyOptions.some(property => property.id === form.property_listing_id)" :value="form.property_listing_id">{{ activeDeal.property.title }}</option></select></label>
-        <label>Deal stage<select v-model="form.status" :disabled="!canEditActive"><option v-for="item in statuses" :key="item" :value="item">{{ statusLabel(item) }}</option></select></label>
+        <label>Deal stage<select v-model="form.status" :disabled="!canEditActive"><option v-for="item in statuses" :key="item" :value="item" :disabled="item === 'closed_won' && !canCloseDeals">{{ statusLabel(item) }}</option></select></label>
         <label>Expected close date<input v-model="form.expected_close_date" :disabled="!canEditActive" type="date"></label>
         <label class="full">Agreed value (EGP)<input v-model="form.agreed_price_egp" :disabled="!canEditActive" inputmode="decimal" pattern="[0-9]+(\.[0-9]{1,2})?" placeholder="Optional until negotiated"></label>
+        <section v-if="form.status === 'closed_won'" class="deal-closing-fields full">
+          <header><strong>Close deal with signed contract</strong><small>Upload the signed contract PDF below, then record the agreed payment details to complete the sale.</small></header>
+          <div class="deal-payment-grid">
+            <label>Payment method<select v-model="form.payment_method" :disabled="!canEditActive" required><option value="" disabled>Select method</option><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option><option value="financing">Financing</option><option value="other">Other</option></select></label>
+            <label>Amount received (EGP)<input v-model="form.amount_received_egp" :disabled="!canEditActive" inputmode="decimal" pattern="[0-9]+(\.[0-9]{1,2})?" required placeholder="0.00"></label>
+            <label v-if="Number(form.amount_received_egp || 0) > 0">Received date<input v-model="form.payment_received_on" :disabled="!canEditActive" type="date" required></label>
+            <label>Payment reference<input v-model="form.payment_reference" :disabled="!canEditActive" maxlength="100" placeholder="Receipt, cheque, or transfer reference"></label>
+            <div class="deal-balance-preview"><small>Remaining balance</small><strong>{{ money((outstandingBalance / 100).toFixed(2)) }}</strong></div>
+            <label class="full">Payment terms / installment details<textarea v-model="form.payment_terms" :disabled="!canEditActive" rows="3" maxlength="5000" placeholder="Installment dates, financing details, or agreed payment notes"></textarea></label>
+          </div>
+          <p v-if="!hasSignedContract" class="deal-signature-requirement">A signed contract PDF is required before this deal can be closed.</p>
+        </section>
         <label class="full">Notes<textarea v-model="form.notes" :disabled="!canEditActive" rows="3" maxlength="10000" placeholder="Negotiation details or next steps"></textarea></label>
         <div v-if="history.length" class="deal-history full"><strong>Deal history</strong><span v-for="item in history.slice(0, 8)" :key="item.id">{{ statusLabel(item.event) }} Â· {{ new Intl.DateTimeFormat('en-EG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.occurred_at)) }}</span></div>
         <section v-if="editingId && canViewCommissions" class="deal-finance-section full">
@@ -238,7 +264,7 @@ onMounted(() => { load(); loadOptions() })
     <small v-if="commissionForm.calculation_type === 'percentage' && !canCalculateCommission" class="commission-estimate">Percentage calculation requires a linked unit, contracted or won status, and an agreed value.</small>
   </form>
 </section>
-        <section v-if="editingId" class="deal-finance-section full"><header><strong>Contracts and documents</strong><small>Private files attached to this deal.</small></header><div v-if="documents.length" class="finance-record-list"><a v-for="document in documents" :key="document.id" class="document-record" :href="document.url"><span><strong>{{ document.original_name }}</strong><small>{{ statusLabel(document.category) }} Â· {{ Math.ceil(document.size_bytes / 1024) }} KB</small></span><Eye :size="15" /></a></div><p v-else class="finance-empty">No deal documents uploaded.</p><label v-if="canEditActive" class="document-upload">Upload contract or document<input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" @change="uploadDocument"></label></section>
+        <section v-if="editingId" class="deal-finance-section full"><header><strong>Contracts and documents</strong><small>Private files attached to this deal. A signed contract PDF is mandatory for closing.</small></header><button type="button" class="button secondary deal-closing-print" @click="printClosingStatement">Print closing statement</button><div v-if="documents.length" class="finance-record-list"><a v-for="document in documents" :key="document.id" class="document-record" :href="document.url"><span><strong>{{ document.original_name }}</strong><small>{{ document.category === 'signed_contract' ? 'Signed contract PDF' : statusLabel(document.category) }} · {{ Math.ceil(document.size_bytes / 1024) }} KB</small></span><Eye :size="15" /></a></div><p v-else class="finance-empty">No deal documents uploaded.</p><label v-if="canEditActive" class="document-upload">Upload signed contract PDF<input type="file" accept="application/pdf,.pdf" @change="uploadDocument($event, 'signed_contract')"></label><label v-if="canEditActive" class="document-upload">Upload supporting document<input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" @change="uploadDocument($event, 'other')"></label></section>
         <div v-if="financeError" class="form-error full">{{ financeError }}</div>
         <div v-if="!leadOptions.length && canCreate && !editingId" class="form-help full">Add a lead before creating a deal.</div>
         <div v-if="error" class="form-error full">{{ error }}</div>
