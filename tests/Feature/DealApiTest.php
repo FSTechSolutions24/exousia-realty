@@ -130,6 +130,10 @@ class DealApiTest extends TestCase
             'payee_user_id' => $finance->id, 'amount_egp' => '12500.50', 'due_on' => '2026-12-01', 'reference' => 'COMM-1',
         ])->assertCreated()->assertJsonPath('amount_minor_units', 1250050)->assertJsonPath('status', 'pending');
         $commissionId = $commission->json('id');
+        $this->getJson('/api/v1/commissions')
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $commissionId)
+            ->assertJsonPath('data.0.status', 'pending');
         $this->patchJson('/api/v1/deals/'.$deal->id.'/commissions/'.$commissionId, ['status' => 'paid'])
             ->assertUnprocessable()->assertJsonValidationErrors('status');
         $this->patchJson('/api/v1/deals/'.$deal->id.'/commissions/'.$commissionId, ['status' => 'approved'])

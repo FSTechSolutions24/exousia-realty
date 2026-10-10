@@ -178,7 +178,7 @@ async function save() {
   saving.value = true
   error.value = ''
   const payload = {
-    lead_id: form.lead_id || undefined,
+    ...(!editingId.value ? { lead_id: form.lead_id || undefined } : {}),
     property_listing_id: form.property_listing_id || null,
     status: form.status,
     expected_close_date: form.expected_close_date || null,
@@ -252,17 +252,17 @@ onMounted(() => { load(); loadOptions() })
     </div>
   </div>
   <p v-else class="finance-empty">No commission entries recorded for this deal.</p>
-  <form v-if="canManageCommissions" class="commission-form commission-calculator" @submit.prevent="addCommission">
+  <div v-if="canManageCommissions" class="commission-form commission-calculator">
     <select v-model="commissionForm.payee_user_id" required aria-label="Commission payee"><option value="" disabled>Payee</option><option v-for="member in auth.bootstrap?.members || []" :key="member.id" :value="member.id">{{ member.name }}</option></select>
     <select v-model="commissionForm.calculation_type" aria-label="Commission calculation method"><option value="percentage" :disabled="!canCalculateCommission">Percentage of unit value</option><option value="fixed">Fixed amount</option></select>
     <input v-if="commissionForm.calculation_type === 'percentage'" v-model="commissionForm.rate_percent" required min="0.01" max="100" step="0.01" type="number" inputmode="decimal" placeholder="Rate (%)">
     <input v-else v-model="commissionForm.amount_egp" required inputmode="decimal" pattern="[0-9]+(\.[0-9]{1,2})?" placeholder="Amount (EGP)">
     <input v-model="commissionForm.due_on" type="date" aria-label="Commission due date">
     <input v-model="commissionForm.reference" maxlength="100" placeholder="Reference (optional)">
-    <button class="button secondary" :disabled="commissionSaving || (commissionForm.calculation_type === 'percentage' && !canCalculateCommission)">{{ commissionSaving ? 'Calculating…' : commissionForm.calculation_type === 'percentage' ? 'Calculate & add' : 'Add fixed amount' }}</button>
+    <button type="button" class="button secondary" :disabled="commissionSaving || !commissionForm.payee_user_id || (commissionForm.calculation_type === 'percentage' ? !canCalculateCommission || !commissionForm.rate_percent : !commissionForm.amount_egp)" @click="addCommission">{{ commissionSaving ? 'Calculating…' : commissionForm.calculation_type === 'percentage' ? 'Calculate & add' : 'Add fixed amount' }}</button>
     <small v-if="commissionForm.calculation_type === 'percentage' && commissionEstimate" class="commission-estimate">Estimated commission: <strong>{{ commissionEstimate }}</strong> on {{ activeDeal?.property?.reference_code }}. Final amount uses exact EGP piastres.</small>
     <small v-if="commissionForm.calculation_type === 'percentage' && !canCalculateCommission" class="commission-estimate">Percentage calculation requires a linked unit, contracted or won status, and an agreed value.</small>
-  </form>
+  </div>
 </section>
         <section v-if="editingId" class="deal-finance-section full"><header><strong>Contracts and documents</strong><small>Private files attached to this deal. A signed contract PDF is mandatory for closing.</small></header><button type="button" class="button secondary deal-closing-print" @click="printClosingStatement">Print closing statement</button><div v-if="documents.length" class="finance-record-list"><a v-for="document in documents" :key="document.id" class="document-record" :href="document.url"><span><strong>{{ document.original_name }}</strong><small>{{ document.category === 'signed_contract' ? 'Signed contract PDF' : statusLabel(document.category) }} · {{ Math.ceil(document.size_bytes / 1024) }} KB</small></span><Eye :size="15" /></a></div><p v-else class="finance-empty">No deal documents uploaded.</p><label v-if="canEditActive" class="document-upload">Upload signed contract PDF<input type="file" accept="application/pdf,.pdf" @change="uploadDocument($event, 'signed_contract')"></label><label v-if="canEditActive" class="document-upload">Upload supporting document<input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" @change="uploadDocument($event, 'other')"></label></section>
         <div v-if="financeError" class="form-error full">{{ financeError }}</div>
