@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { BarChart3, BadgeCheck, BriefcaseBusiness, Download, Handshake, UsersRound } from '@lucide/vue'
-import { api } from '../api'
+import { api, downloadExcel } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -39,17 +39,11 @@ async function load() {
   } finally { loading.value = false }
 }
 
-async function exportCsv() {
+async function exportExcel() {
   exporting.value = true
   error.value = ''
   try {
-    const response = await api.get('/reports', { params: { period: period.value, format: 'csv' }, responseType: 'blob' })
-    const url = URL.createObjectURL(response.data)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `exousia-report-${period.value}.csv`
-    anchor.click()
-    URL.revokeObjectURL(url)
+    await downloadExcel('/reports', { period: period.value, format: 'xlsx' }, `exousia-report-${period.value}.xlsx`)
   } catch (exception: any) {
     error.value = exception.response?.data?.message || 'Unable to export this report.'
   } finally { exporting.value = false }
@@ -61,7 +55,7 @@ onMounted(load)
 
 <template>
   <div class="reports-page">
-    <header class="page-heading reports-heading"><div><span class="eyebrow">BROKERAGE PERFORMANCE</span><h1>Reports</h1><p>Lead conversion and deal progress from your workspace records.</p></div><div class="reports-heading-actions"><label class="reports-period">Reporting period<select v-model="period"><option value="month">This month</option><option value="quarter">This quarter</option><option value="year">Year to date</option></select></label><button class="button secondary" :disabled="exporting || loading" @click="exportCsv"><Download />{{ exporting ? 'Preparing…' : 'Export CSV' }}</button></div></header>
+    <header class="page-heading reports-heading"><div><span class="eyebrow">BROKERAGE PERFORMANCE</span><h1>Reports</h1><p>Lead conversion and deal progress from your workspace records.</p></div><div class="reports-heading-actions"><label class="reports-period">Reporting period<select v-model="period"><option value="month">This month</option><option value="quarter">This quarter</option><option value="year">Year to date</option></select></label><button class="button secondary" :disabled="exporting || loading" @click="exportExcel"><Download />{{ exporting ? 'Preparing…' : 'Export Excel' }}</button></div></header>
     <div v-if="error" class="detail-alert">{{ error }}</div>
     <div v-else-if="loading" class="skeleton-grid"><i v-for="item in 4" :key="item"></i></div>
     <template v-else-if="report">

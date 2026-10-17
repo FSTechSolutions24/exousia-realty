@@ -121,6 +121,43 @@ class PlatformAdminApiTest extends TestCase
         $this->assertDatabaseCount('subscription_payments', 0);
     }
 
+    public function test_platform_admin_can_configure_plan_prices_and_enforced_resource_limits(): void
+    {
+        $admin = User::factory()->create(['is_platform_admin' => true]);
+        [$company, $owner] = $this->workspaceWithOwner('Plan Limits Realty');
+        $plan = SubscriptionPlan::where('slug', 'professional')->firstOrFail();
+
+        $this->actingAs($admin)->getJson('/api/v1/platform/plans')->assertOk()
+            ->assertJsonFragment(['slug' => 'professional']);
+        $this->putJson('/api/v1/platform/plans/'.$plan->id, [
+            'name' => 'Professional Plus', 'description' => 'A configured plan.',
+            'monthly_price_egp' => '1000.50', 'yearly_price_egp' => '10000',
+            'team_member_limit' => 20, 'lead_limit' => 30, 'listing_limit' => 50, 'developer_limit' => 12, 'branch_limit' => 2,
+            'features' => ['CRM', 'Finance'], 'is_active' => true, 'is_featured' => true, 'position' => 2,
+        ])->assertOk()->assertJsonPath('plan.team_member_limit', 20)->assertJsonPath('plan.lead_limit', 30)
+            ->assertJsonPath('plan.developer_limit', 12);
+
+        $this->assertDatabaseHas('subscription_plans', [
+            'id' => $plan->id, 'monthly_price_minor' => 100050, 'yearly_price_minor' => 1000000,
+            'team_member_limit' => 20, 'lead_limit' => 30, 'listing_limit' => 50, 'developer_limit' => 12, 'branch_limit' => 2,
+        ]);
+        $this->assertDatabaseHas('platform_admin_actions', ['company_id' => null, 'action' => 'subscription_plan_updated']);
+        $this->getJson('/api/v1/subscription-plans')->assertOk()
+            ->assertJsonPath('data.2.features.2', 'Up to 20 team members')
+            ->assertJsonPath('data.2.features.3', 'Up to 30 leads')
+            ->assertJsonPath('data.2.features.4', 'Up to 50 property listings')
+            ->assertJsonPath('data.2.features.5', 'Up to 12 real-estate developers')
+            ->assertJsonPath('data.2.features.6', 'Up to 2 active branches');
+
+        $this->actingAs($owner)->putJson('/api/v1/platform/plans/'.$plan->id, [])->assertForbidden();
+        $trial = SubscriptionPlan::where('slug', 'free-trial')->firstOrFail();
+        $this->actingAs($admin)->putJson('/api/v1/platform/plans/'.$trial->id, [
+            'name' => 'Free Trial', 'monthly_price_egp' => '0', 'yearly_price_egp' => null,
+            'team_member_limit' => 3, 'lead_limit' => null, 'listing_limit' => null, 'developer_limit' => null, 'branch_limit' => null,
+            'features' => [], 'is_active' => false, 'is_featured' => false, 'position' => 0,
+        ])->assertUnprocessable();
+    }
+
     private function workspace(string $name): Company
     {
         $company = Company::create(['name' => $name, 'slug' => strtolower(str_replace(' ', '-', $name))]);

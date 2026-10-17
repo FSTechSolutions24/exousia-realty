@@ -6,6 +6,7 @@ import { api } from '../api'
 import { useAuthStore } from '../stores/auth'
 import StatusBadge from '../components/StatusBadge.vue'
 import Modal from '../components/Modal.vue'
+import WhatsAppMessageModal from '../components/WhatsAppMessageModal.vue'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -25,6 +26,7 @@ const outcomeSaving = ref(false)
 const outcomeError = ref('')
 const viewingForm = reactive({ property_listing_id: '', scheduled_at: '' })
 const outcomeForm = reactive({ status: 'completed', buyer_rating: '5', buyer_feedback: '' })
+const showWhatsAppModal = ref(false)
 
 const initials = computed(() => String(lead.value?.name || '?').split(/\s+/).filter(Boolean).map((part: string) => part.charAt(0)).join('').slice(0, 2).toUpperCase())
 const activities = computed(() => Array.isArray(lead.value?.activities) ? lead.value.activities : [])
@@ -38,10 +40,6 @@ const sourceLabel = computed(() => {
   return labels[source] || source.replace(/\b\w/g, letter => letter.toUpperCase()) || 'Unknown'
 })
 const assigneeInitial = computed(() => lead.value?.assignee?.name?.charAt(0)?.toUpperCase() || '—')
-const whatsappUrl = computed(() => {
-  const phone = String(lead.value?.phone_normalized || '').replace(/\D/g, '')
-  return phone ? `https://wa.me/${phone}` : null
-})
 
 async function load() {
   loading.value = true
@@ -182,7 +180,7 @@ watch(() => route.params.id, load, { immediate: true })
     <header class="lead-hero">
       <div class="lead-avatar large">{{ initials }}</div>
       <div class="lead-title"><span class="eyebrow">LEAD #{{ lead.id }}</span><h1>{{ lead.name || 'Unnamed lead' }}</h1><div><a v-if="lead.phone_normalized" :href="`tel:${lead.phone_normalized}`"><Phone />{{ lead.phone_original || lead.phone_normalized }}</a><a v-if="lead.email" :href="`mailto:${lead.email}`"><Mail />{{ lead.email }}</a></div></div>
-      <div class="lead-hero-actions"><a v-if="whatsappUrl" class="button secondary" :href="whatsappUrl" target="_blank" rel="noopener"><MessageCircle />WhatsApp</a><button class="button primary" @click="openViewing()"><CalendarPlus />Schedule a viewing</button></div>
+      <div class="lead-hero-actions"><button v-if="lead.phone_normalized" class="button secondary" @click="showWhatsAppModal = true"><MessageCircle />WhatsApp</button><button class="button primary" @click="openViewing()"><CalendarPlus />Schedule a viewing</button></div>
     </header>
     <div class="detail-grid">
       <section class="detail-main">
@@ -228,5 +226,6 @@ watch(() => route.params.id, load, { immediate: true })
         <div class="form-actions full"><button type="button" class="button secondary" @click="selectedViewing = null">Cancel</button><button class="button primary" :disabled="outcomeSaving">{{ outcomeSaving ? 'Saving…' : 'Save viewing result' }}</button></div>
       </form>
     </Modal>
+    <WhatsAppMessageModal v-if="showWhatsAppModal" :lead-id="lead.id" @close="showWhatsAppModal = false" @sent="load" />
   </div>
 </template>

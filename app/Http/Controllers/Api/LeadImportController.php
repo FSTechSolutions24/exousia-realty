@@ -67,6 +67,15 @@ class LeadImportController extends Controller
             $existing = LeadImport::where('company_id', $tenant->id())->where('file_hash', $fileHash)->first();
             if ($existing) return ['already_imported' => true, 'batch' => $existing];
 
+            $company = Company::findOrFail($tenant->id());
+            $limit = app(\App\Services\SubscriptionService::class)->current($company)?->plan?->lead_limit;
+            if ($limit !== null) {
+                $currentLeads = Lead::withoutGlobalScope('branch')->withTrashed()->where('company_id', $tenant->id())->count();
+                if ($currentLeads + count($preview) > $limit) {
+                    throw ValidationException::withMessages(['plan' => "Your current plan allows up to {$limit} leads. This import would exceed that limit."]);
+                }
+            }
+
             $stageId = PipelineStage::where('company_id', $tenant->id())->orderBy('position')->value('id');
             abort_if(! $stageId, 422, 'Create a pipeline stage before importing leads.');
             $membership = $request->attributes->get('membership');

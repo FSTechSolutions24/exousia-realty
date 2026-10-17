@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Model;
 
 class DealCommission extends Model
 {
+    use BelongsToBranch;
+
     protected $fillable = [
-        'company_id', 'deal_id', 'company_membership_id', 'payee_name', 'amount_minor_units',
+        'company_id', 'branch_id', 'deal_id', 'company_membership_id', 'payee_name', 'amount_minor_units',
         'currency', 'status', 'due_on', 'paid_at', 'reference', 'notes', 'created_by',
         'property_listing_id', 'unit_reference', 'calculation_type', 'rate_basis_points', 'base_amount_minor_units',
     ];

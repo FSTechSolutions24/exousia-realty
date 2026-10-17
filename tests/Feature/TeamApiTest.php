@@ -101,15 +101,16 @@ class TeamApiTest extends TestCase
     public function test_team_member_limit_from_active_plan_is_enforced(): void
     {
         [$company, $owner] = $this->workspace();
+        \App\Models\SubscriptionPlan::where('slug', 'free-trial')->update(['team_member_limit' => 2]);
         $this->actingAs($owner)->withHeader('X-Company-ID', $company->id);
-        foreach (['seat-one@example.test', 'seat-two@example.test'] as $email) {
+        foreach (['seat-one@example.test'] as $email) {
             $this->postJson('/api/v1/team/members', ['name' => 'Seat User', 'email' => $email, 'role' => 'agent'])->assertCreated();
         }
 
         $this->postJson('/api/v1/team/members', ['name' => 'Over Limit', 'email' => 'seat-three@example.test', 'role' => 'agent'])
             ->assertUnprocessable()->assertJsonValidationErrors('plan');
         $this->assertDatabaseCount('company_memberships', 1);
-        $this->assertDatabaseCount('company_invitations', 2);
+        $this->assertDatabaseCount('company_invitations', 1);
     }
 
     private function workspace(): array

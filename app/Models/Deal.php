@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Model;
 
 class Deal extends Model
 {
+    use BelongsToBranch;
+
     protected $fillable = [
-        'company_id', 'lead_id', 'property_listing_id', 'created_by', 'status',
+        'company_id', 'branch_id', 'lead_id', 'property_listing_id', 'created_by', 'status',
         'expected_close_date', 'agreed_price_minor_units', 'currency', 'notes',
         'closed_at', 'salesperson_membership_id', 'salesperson_name',
         'amount_received_minor_units', 'payment_method', 'payment_reference', 'payment_received_on', 'payment_terms',
@@ -28,4 +31,6 @@ class Deal extends Model
     public function commissions() { return $this->hasMany(DealCommission::class); }
     public function documents() { return $this->hasMany(DealDocument::class); }
     public function salespersonMembership() { return $this->belongsTo(CompanyMembership::class, 'salesperson_membership_id'); }
+    public function invoices() { return $this->hasMany(Invoice::class); }
+    public function installments() { return $this->hasMany(DealInstallment::class)->orderBy('sequence'); }
 }

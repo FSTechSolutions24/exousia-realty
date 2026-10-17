@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Mail\TeamInvitationMail;
 use App\Models\CompanyInvitation;
+use App\Models\Company;
 use App\Models\CompanyMembership;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -12,6 +13,7 @@ use App\Services\SubscriptionService;
 use App\Support\TenantContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -59,49 +61,54 @@ class TeamController extends Controller
         $data['email'] = Str::lower($data['email']);
         $user = User::whereRaw('LOWER(email) = ?', [$data['email']])->first();
         if ($user) {
-            $membership = CompanyMembership::where('company_id', $tenant->id())->where('user_id', $user->id)->first();
-            if ($membership && $membership->status === 'active') {
-                throw ValidationException::withMessages(['email' => 'This person is already an active member.']);
-            }
+            [$membership, $old, $event] = DB::transaction(function () use ($tenant, $user, $data) {
+                Company::whereKey($tenant->id())->lockForUpdate()->firstOrFail();
+                $membership = CompanyMembership::where('company_id', $tenant->id())->where('user_id', $user->id)->lockForUpdate()->first();
+                if ($membership && $membership->status === 'active') {
+                    throw ValidationException::withMessages(['email' => 'This person is already an active member.']);
+                }
 
-            $this->ensureTeamCapacity($tenant->id());
-
-            if ($membership) {
-                $old = $membership->only(['role', 'status']);
-                $membership->update(['role' => $data['role'], 'status' => 'active', 'joined_at' => now()]);
-                $event = 'team.member_reactivated';
-            } else {
-                $membership = CompanyMembership::create([
-                    'company_id' => $tenant->id(), 'user_id' => $user->id, 'role' => $data['role'],
-                    'status' => 'active', 'joined_at' => now(),
-                ]);
-                $old = [];
-                $event = 'team.member_added';
-            }
+                $this->ensureTeamCapacity($tenant->id());
+                if ($membership) {
+                    $old = $membership->only(['role', 'status']);
+                    $membership->update(['role' => $data['role'], 'status' => 'active', 'joined_at' => now()]);
+                    $event = 'team.member_reactivated';
+                } else {
+                    $membership = CompanyMembership::create([
+                        'company_id' => $tenant->id(), 'user_id' => $user->id, 'role' => $data['role'],
+                        'status' => 'active', 'joined_at' => now(),
+                    ]);
+                    $old = [];
+                    $event = 'team.member_added';
+                }
+                return [$membership, $old, $event];
+            });
 
             $audit->log($request, $event, $membership, $old, $membership->only(['role', 'status']));
             return response()->json(['member' => $this->serialize($membership->load('user:id,name,email'))], 201);
         }
 
         $plainToken = Str::random(64);
-        $existingInvitation = CompanyInvitation::where('company_id', $tenant->id())
-            ->where('email', $data['email'])->whereNull('accepted_at')->whereNull('revoked_at')->latest()->first();
-        if ($existingInvitation) {
-            $existingInvitation->update([
-                'invited_by' => $request->user()->id, 'name' => $data['name'], 'role' => $data['role'],
-                'token_hash' => hash('sha256', $plainToken), 'expires_at' => now()->addDays(7),
-            ]);
-            $invitation = $existingInvitation->fresh();
-            $event = 'team.invitation_resent';
-        } else {
+        [$invitation, $event] = DB::transaction(function () use ($tenant, $request, $data, $plainToken) {
+            Company::whereKey($tenant->id())->lockForUpdate()->firstOrFail();
+            $existingInvitation = CompanyInvitation::where('company_id', $tenant->id())
+                ->where('email', $data['email'])->whereNull('accepted_at')->whereNull('revoked_at')->latest()->lockForUpdate()->first();
+            if ($existingInvitation) {
+                $existingInvitation->update([
+                    'invited_by' => $request->user()->id, 'name' => $data['name'], 'role' => $data['role'],
+                    'token_hash' => hash('sha256', $plainToken), 'expires_at' => now()->addDays(7),
+                ]);
+                return [$existingInvitation->fresh(), 'team.invitation_resent'];
+            }
+
             $this->ensureTeamCapacity($tenant->id());
             $invitation = CompanyInvitation::create([
                 'company_id' => $tenant->id(), 'invited_by' => $request->user()->id,
                 'name' => $data['name'], 'email' => $data['email'], 'role' => $data['role'],
                 'token_hash' => hash('sha256', $plainToken), 'expires_at' => now()->addDays(7),
             ]);
-            $event = 'team.invitation_created';
-        }
+            return [$invitation, 'team.invitation_created'];
+        });
         $audit->log($request, $event, $invitation, [], ['email' => $invitation->email, 'role' => $invitation->role]);
         $url = url('/accept-invite?token='.urlencode($plainToken));
         Mail::to($invitation->email)->send(new TeamInvitationMail($invitation->load(['company', 'inviter']), $url));

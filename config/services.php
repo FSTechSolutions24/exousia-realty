@@ -40,4 +40,10 @@ return [
         'payment_methods' => array_values(array_filter(array_map('intval', explode(',', (string) env('PAYMOB_PAYMENT_METHODS', env('PAYMOB_INTEGRATION_ID', '')))))),
     ],
 
+    'whatsapp' => [
+        'driver' => env('WHATSAPP_DRIVER', 'log'),
+        'graph_version' => env('WHATSAPP_GRAPH_VERSION', 'v25.0'),
+        'timeout' => env('WHATSAPP_TIMEOUT', 15),
+    ],
+
 ];

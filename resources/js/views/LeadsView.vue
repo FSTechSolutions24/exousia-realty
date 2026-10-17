@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight, Download, ExternalLink, ListFilter, MessageCircle, MoreHorizontal, Pencil, Phone, Plus, Search, Upload, Users, X } from '@lucide/vue'
-import { api } from '../api'
+import { api, downloadExcel } from '../api'
 import { useAuthStore } from '../stores/auth'
 import type { Lead } from '../types'
 import Modal from '../components/Modal.vue'
@@ -16,6 +16,7 @@ const locations = ref<PreferredLocationOption[]>([])
 const locationsLoading = ref(true)
 const meta = ref<any>({})
 const loading = ref(true)
+const exporting = ref(false)
 const saving = ref(false)
 const error = ref('')
 const search = ref('')
@@ -171,6 +172,16 @@ async function downloadImportTemplate() {
   }
 }
 
+async function exportLeads() {
+  exporting.value = true
+  error.value = ''
+  try {
+    await downloadExcel('/exports/leads', { search: search.value, stage: stage.value, archived: archived.value ? 1 : 0, ...appliedFilters }, 'leads.xlsx')
+  } catch (exception: any) {
+    error.value = exception.response?.data?.message || 'Unable to export leads.'
+  } finally { exporting.value = false }
+}
+
 function openImport() {
   importFile.value = null
   importPreview.value = null
@@ -282,7 +293,7 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenus))
 
 <template>
   <div>
-    <header class="page-heading"><div><span class="eyebrow">RELATIONSHIPS</span><h1>Leads</h1><p>Qualify enquiries, plan the next touch, and keep momentum visible.</p></div><div class="lead-page-actions"><button v-if="canImportLeads" class="button secondary" @click="downloadImportTemplate"><Download :size="16" />Download template</button><button v-if="canImportLeads" class="button secondary" @click="openImport"><Upload :size="16" />Import leads</button><button class="button primary" @click="openCreate"><Plus :size="18" />New lead</button></div></header>
+    <header class="page-heading"><div><span class="eyebrow">RELATIONSHIPS</span><h1>Leads</h1><p>Qualify enquiries, plan the next touch, and keep momentum visible.</p></div><div class="lead-page-actions"><button class="button secondary" :disabled="exporting" @click="exportLeads"><Download :size="16" />{{ exporting ? 'Preparing…' : 'Export Excel' }}</button><button v-if="canImportLeads" class="button secondary" @click="downloadImportTemplate"><Download :size="16" />Download template</button><button v-if="canImportLeads" class="button secondary" @click="openImport"><Upload :size="16" />Import leads</button><button class="button primary" @click="openCreate"><Plus :size="18" />New lead</button></div></header>
     <div v-if="error && !showEditor" class="detail-alert">{{ error }}<button @click="error = ''">Dismiss</button></div>
     <div v-if="importNotice" class="import-success-notice"><span>{{ importNotice }}</span><button @click="importNotice = ''">Dismiss</button></div>
     <section class="panel data-panel">

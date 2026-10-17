@@ -17,7 +17,7 @@
         @foreach($entry['css'] ?? [] as $css)<link rel="stylesheet" href="/build/{{ $css }}">@endforeach
         <script type="module" src="/build/{{ $entry['file'] }}"></script>
     @else
-        <script type="module" src="http://localhost:5173/@vite/client"></script>
+        <script type="module" src="http://localhost:5173/@@vite/client"></script>
         <script type="module" src="http://localhost:5173/resources/js/app.ts"></script>
     @endif
 </head>

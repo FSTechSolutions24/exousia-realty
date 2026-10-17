@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { AtSign, Building2, Globe2, Mail, Pencil, Phone, Plus, Search, ShieldCheck, UserRound, X } from '@lucide/vue'
-import { api } from '../api'
+import { AtSign, Building2, Download, Globe2, Mail, Pencil, Phone, Plus, Search, ShieldCheck, UserRound, X } from '@lucide/vue'
+import { api, downloadExcel } from '../api'
 import { useAuthStore } from '../stores/auth'
 import Modal from '../components/Modal.vue'
 
@@ -10,6 +10,7 @@ const auth = useAuthStore()
 const developers = ref<Developer[]>([])
 const pagination = ref<any>({})
 const loading = ref(true)
+const exporting = ref(false)
 const saving = ref(false)
 const error = ref('')
 const search = ref('')
@@ -34,6 +35,17 @@ async function load() {
   } catch (exception: any) {
     error.value = exception.response?.data?.message || 'Unable to load real estate developers.'
   } finally { loading.value = false }
+}
+
+async function exportDevelopers() {
+  exporting.value = true; error.value = ''
+  const params: Record<string, string | number> = { search: search.value }
+  if (activeFilter.value) params.active = activeFilter.value === 'active' ? 1 : 0
+  try {
+    await downloadExcel('/exports/developers', params, 'developers.xlsx')
+  } catch (exception: any) {
+    error.value = exception.response?.data?.message || 'Unable to export developers.'
+  } finally { exporting.value = false }
 }
 
 function openCreate() {
@@ -82,7 +94,7 @@ onMounted(load)
 
 <template>
   <div class="developer-page">
-    <header class="page-heading"><div><span class="eyebrow">YOUR PARTNER NETWORK</span><h1>Real estate developers</h1><p>Keep the builders behind your inventory close at hand.</p></div><button v-if="canManage" class="button primary" @click="openCreate"><Plus :size="18" />Add developer</button></header>
+    <header class="page-heading"><div><span class="eyebrow">YOUR PARTNER NETWORK</span><h1>Real estate developers</h1><p>Keep the builders behind your inventory close at hand.</p></div><div class="lead-page-actions"><button class="button secondary" :disabled="exporting" @click="exportDevelopers"><Download :size="16" />{{ exporting ? 'Preparing…' : 'Export Excel' }}</button><button v-if="canManage" class="button primary" @click="openCreate"><Plus :size="18" />Add developer</button></div></header>
     <div v-if="error && !showEditor" class="detail-alert">{{ error }}<button @click="error = ''">Dismiss</button></div>
     <section class="developer-summary"><article><span class="developer-summary-icon"><Building2 /></span><div><strong>{{ pagination.total || 0 }}</strong><small>Developer partners</small></div></article><article><span class="developer-summary-icon active"><ShieldCheck /></span><div><strong>{{ activeCount }}</strong><small>Active relationships on this page</small></div></article></section>
     <section class="panel developer-panel">

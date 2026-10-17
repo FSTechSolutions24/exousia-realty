@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Lead;
 use App\Models\PipelineStage;
 use App\Models\PropertyListing;
+use App\Models\SubscriptionPlan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -25,6 +26,22 @@ class LeadApiTest extends TestCase
 
         $this->assertDatabaseHas('leads', ['company_id' => $company->id, 'phone_normalized' => '+201012345678']);
         $this->assertDatabaseHas('audit_logs', ['company_id' => $company->id, 'event' => 'lead.created']);
+    }
+
+    public function test_plan_lead_limit_covers_single_create_and_csv_import_across_the_workspace(): void
+    {
+        [$company, $owner, $stage] = $this->workspace();
+        SubscriptionPlan::where('slug', 'free-trial')->update(['lead_limit' => 1]);
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)
+            ->postJson('/api/v1/leads', ['name' => 'First buyer', 'phone' => '01012345678', 'pipeline_stage_id' => $stage->id])
+            ->assertCreated();
+        $this->postJson('/api/v1/leads', ['name' => 'Second buyer', 'phone' => '01112345678', 'pipeline_stage_id' => $stage->id])
+            ->assertUnprocessable()->assertJsonValidationErrors('plan');
+
+        $csv = UploadedFile::fake()->createWithContent('over-limit.csv', "name,phone\nImported buyer,01212345678\n");
+        $this->postJson('/api/v1/leads/import', ['file' => $csv])->assertUnprocessable()->assertJsonValidationErrors('plan');
+        $this->assertDatabaseCount('leads', 1);
+        $this->assertDatabaseCount('lead_imports', 0);
     }
 
     public function test_it_returns_a_company_scoped_duplicate_warning(): void

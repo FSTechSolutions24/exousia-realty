@@ -4,10 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\RealEstateDeveloper;
+use App\Models\Company;
 use App\Services\AuditLogger;
+use App\Services\SubscriptionService;
 use App\Support\TenantContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class RealEstateDeveloperController extends Controller
 {
@@ -31,11 +35,19 @@ class RealEstateDeveloperController extends Controller
         return response()->json($query->paginate((int) ($data['per_page'] ?? 20)));
     }
 
-    public function store(Request $request, TenantContext $tenant, AuditLogger $audit)
+    public function store(Request $request, TenantContext $tenant, AuditLogger $audit, SubscriptionService $subscriptions)
     {
         $this->authorizeManage($request);
         $data = $this->validateDeveloper($request, $tenant);
-        $developer = RealEstateDeveloper::create($data + ['company_id' => $tenant->id()]);
+        $developer = DB::transaction(function () use ($tenant, $data, $subscriptions) {
+            $company = Company::whereKey($tenant->id())->lockForUpdate()->firstOrFail();
+            $limit = $subscriptions->current($company)?->plan?->developer_limit;
+            $count = RealEstateDeveloper::where('company_id', $company->id)->count();
+            if ($limit !== null && $count >= $limit) {
+                throw ValidationException::withMessages(['plan' => "Your current plan allows up to {$limit} real-estate developers. Upgrade your plan to add another."]);
+            }
+            return RealEstateDeveloper::create($data + ['company_id' => $company->id]);
+        });
         $audit->log($request, 'developer.created', $developer, [], $developer->toArray());
         return response()->json($developer->loadCount('listings'), 201);
     }

@@ -51,6 +51,7 @@ class TaskController extends Controller
         ]);
         $membership = $request->attributes->get('membership');
         abort_unless($membership->can('manage_tasks') || ($membership->can('manage_own_tasks') && (int) $data['assigned_to'] === $request->user()->id), 403);
+        if (! empty($data['lead_id'])) Lead::where('company_id', $tenant->id())->findOrFail($data['lead_id']);
         $task = FollowUpTask::create($data + ['company_id' => $tenant->id(), 'created_by' => $request->user()->id]);
         $audit->log($request, 'task.created', $task, [], $task->toArray());
         return response()->json($task->load(['lead:id,name', 'assignee:id,name']), 201);

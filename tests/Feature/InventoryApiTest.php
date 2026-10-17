@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Company;
 use App\Models\PropertyListing;
+use App\Models\SubscriptionPlan;
 use App\Models\PropertyPhoto;
 use App\Models\PreferredLocation;
 use App\Models\User;
@@ -106,6 +107,18 @@ class InventoryApiTest extends TestCase
                 'title' => 'Invalid price', 'listing_type' => 'sale', 'property_type' => 'apartment',
                 'preferred_location_id' => $location->id, 'price_egp' => '12.345',
             ])->assertUnprocessable()->assertJsonValidationErrors('price_egp');
+    }
+
+    public function test_property_listing_limit_is_enforced_across_branches(): void
+    {
+        [$company, $owner] = $this->workspace('owner');
+        SubscriptionPlan::where('slug', 'free-trial')->update(['listing_limit' => 1]);
+        $location = PreferredLocation::where('company_id', $company->id)->firstOrFail();
+        $payload = ['title' => 'First plan property', 'listing_type' => 'sale', 'property_type' => 'apartment', 'preferred_location_id' => $location->id, 'price_egp' => '1200000'];
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)->postJson('/api/v1/inventory', $payload)->assertCreated();
+        $payload['title'] = 'Second plan property';
+        $this->postJson('/api/v1/inventory', $payload)->assertUnprocessable()->assertJsonValidationErrors('plan');
+        $this->assertDatabaseCount('property_listings', 1);
     }
 
     public function test_listing_location_must_be_active_and_belong_to_the_current_company(): void

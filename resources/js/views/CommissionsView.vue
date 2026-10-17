@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { BadgeCheck, Printer, Search, Upload } from '@lucide/vue'
-import { api } from '../api'
+import { BadgeCheck, Download, Printer, Search, Upload } from '@lucide/vue'
+import { api, downloadExcel } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 interface Commission {
@@ -15,6 +15,7 @@ const auth = useAuthStore()
 const entries = ref<Commission[]>([])
 const pagination = ref<any>({})
 const loading = ref(true)
+const exporting = ref(false)
 const error = ref('')
 const search = ref('')
 const status = ref('')
@@ -36,6 +37,15 @@ async function load() {
   } catch (exception: any) {
     error.value = exception.response?.data?.message || 'Unable to load commissions.'
   } finally { loading.value = false }
+}
+
+async function exportCommissions() {
+  exporting.value = true; error.value = ''
+  try {
+    await downloadExcel('/exports/commissions', { search: search.value, status: status.value }, 'commissions.xlsx')
+  } catch (exception: any) {
+    error.value = exception.response?.data?.message || 'Unable to export commissions.'
+  } finally { exporting.value = false }
 }
 
 async function changeStatus(entry: Commission, nextStatus: string) {
@@ -77,7 +87,7 @@ onMounted(load)
 
 <template>
   <div class="commissions-page">
-    <header class="page-heading"><div><span class="eyebrow">PAYROLL CONTROL</span><h1>Commissions</h1><p>Review employee commission orders, collect signed copies, and record completed payments.</p></div><span class="commission-security-note"><BadgeCheck :size="16" />Workspace private</span></header>
+    <header class="page-heading"><div><span class="eyebrow">PAYROLL CONTROL</span><h1>Commissions</h1><p>Review employee commission orders, collect signed copies, and record completed payments.</p></div><div class="lead-page-actions"><span class="commission-security-note"><BadgeCheck :size="16" />Workspace private</span><button class="button secondary" :disabled="exporting" @click="exportCommissions"><Download :size="16" />{{ exporting ? 'Preparing…' : 'Export Excel' }}</button></div></header>
     <div v-if="error" class="detail-alert">{{ error }}<button @click="error = ''">Dismiss</button></div>
     <section class="panel commission-register">
       <div class="commission-register-toolbar"><div class="search-box"><Search /><input v-model="search" placeholder="Search employee, unit, or reference…"></div><select v-model="status" aria-label="Filter commissions by status"><option value="">All statuses</option><option value="pending">Pending approval</option><option value="approved">Approved</option><option value="paid">Paid</option><option value="void">Void</option></select></div>

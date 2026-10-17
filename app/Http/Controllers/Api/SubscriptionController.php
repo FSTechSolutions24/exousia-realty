@@ -21,10 +21,22 @@ class SubscriptionController extends Controller
         return response()->json(['data' => SubscriptionPlan::active()->orderBy('position')->get()->map(fn ($plan) => [
             'id' => $plan->id, 'slug' => $plan->slug, 'name' => $plan->name, 'description' => $plan->description,
             'monthly_price_minor' => $plan->monthly_price_minor, 'yearly_price_minor' => $plan->yearly_price_minor,
-            'team_member_limit' => $plan->team_member_limit,
-            'currency' => $plan->currency, 'features' => $plan->features, 'featured' => $plan->is_featured,
+            'team_member_limit' => $plan->team_member_limit, 'lead_limit' => $plan->lead_limit,
+            'listing_limit' => $plan->listing_limit, 'developer_limit' => $plan->developer_limit, 'branch_limit' => $plan->branch_limit,
+            'currency' => $plan->currency, 'features' => $this->displayFeatures($plan), 'featured' => $plan->is_featured,
             'trial_days' => $plan->isFreeTrial() ? SubscriptionService::TRIAL_DAYS : null,
         ])]);
+    }
+
+    private function displayFeatures(SubscriptionPlan $plan): array
+    {
+        $features = collect($plan->features ?? [])->reject(fn ($feature) => preg_match('/^Up to \\d+ (team members?|leads?|property listings?|real-estate developers?|branches?|active branches?)$/i', $feature))->values();
+        if ($plan->team_member_limit !== null) $features->push('Up to '.$plan->team_member_limit.' team members');
+        if ($plan->lead_limit !== null) $features->push('Up to '.$plan->lead_limit.' leads');
+        if ($plan->listing_limit !== null) $features->push('Up to '.$plan->listing_limit.' property listings');
+        if ($plan->developer_limit !== null) $features->push('Up to '.$plan->developer_limit.' real-estate developers');
+        if ($plan->branch_limit !== null) $features->push('Up to '.$plan->branch_limit.' active branches');
+        return $features->all();
     }
 
     public function status(Request $request, TenantContext $tenant, SubscriptionService $subscriptions, PaymobService $paymob)

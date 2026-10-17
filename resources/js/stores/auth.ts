@@ -45,10 +45,10 @@ export const useAuthStore = defineStore('auth', () => {
     await prepareCsrf(); return api.post('/auth/register', payload)
   }
   async function logout() {
-    await api.post('/auth/logout'); bootstrap.value = null; platformAdmin.value = false; platformUser.value = null; localStorage.removeItem('exousia_company_id')
+    await api.post('/auth/logout'); bootstrap.value = null; platformAdmin.value = false; platformUser.value = null; localStorage.removeItem('exousia_company_id'); localStorage.removeItem('exousia_branch_id')
   }
   async function switchCompany(id: number) {
-    await api.post(`/companies/${id}/switch`); localStorage.setItem('exousia_company_id', String(id)); await load()
+    await api.post(`/companies/${id}/switch`); localStorage.setItem('exousia_company_id', String(id)); localStorage.removeItem('exousia_branch_id'); await load()
   }
   return { bootstrap, platformAdmin, platformUser, loading, locale, authenticated, load, login, register, logout, switchCompany, toggleLocale }
 })

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Support\TenantContext;
+use App\Support\BranchContext;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Support\ServiceProvider;
@@ -18,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
     public function register()
     {
         $this->app->singleton(TenantContext::class, fn () => new TenantContext());
+        $this->app->singleton(BranchContext::class, fn () => new BranchContext());
     }
 
     /**

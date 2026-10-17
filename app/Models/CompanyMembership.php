@@ -14,6 +14,14 @@ class CompanyMembership extends Model
         'joined_at' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        static::created(function (CompanyMembership $membership) {
+            $main = Branch::where('company_id', $membership->company_id)->where('is_main', true)->first();
+            if ($main) $main->memberships()->syncWithoutDetaching([$membership->id => ['company_id' => $membership->company_id]]);
+        });
+    }
+
     public function company() { return $this->belongsTo(Company::class); }
     public function user() { return $this->belongsTo(User::class); }
 
@@ -24,10 +32,10 @@ class CompanyMembership extends Model
         }
 
         $defaults = [
-            'manager' => ['view_team', 'view_inventory', 'manage_inventory', 'view_all_leads', 'create_leads', 'update_leads', 'archive_leads', 'reassign_leads', 'manage_tasks', 'view_deals', 'manage_deals', 'view_reports', 'view_commissions'],
+            'manager' => ['view_team', 'view_inventory', 'manage_inventory', 'view_all_leads', 'create_leads', 'update_leads', 'archive_leads', 'reassign_leads', 'manage_tasks', 'view_deals', 'manage_deals', 'view_reports', 'view_commissions', 'manage_integrations', 'view_invoices', 'manage_invoices', 'manage_installments'],
             'agent' => ['view_team', 'view_inventory', 'view_own_leads', 'create_leads', 'update_own_leads', 'manage_own_tasks', 'view_own_deals', 'create_deals', 'update_own_deals', 'view_own_reports', 'view_own_commissions'],
             'operations' => ['view_team', 'view_inventory', 'manage_inventory', 'view_all_leads', 'create_leads', 'update_leads', 'archive_leads', 'manage_tasks', 'view_deals', 'manage_deals', 'export_data'],
-            'finance' => ['view_team', 'view_deals', 'view_commissions', 'manage_commissions', 'view_reports'],
+            'finance' => ['view_team', 'view_deals', 'view_commissions', 'manage_commissions', 'view_reports', 'view_invoices', 'manage_invoices', 'manage_installments'],
         ];
 
         return in_array($permission, array_unique(array_merge($defaults[$this->role] ?? [], $this->permissions ?? [])), true);

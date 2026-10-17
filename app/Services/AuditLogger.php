@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Company;
 use App\Models\AuditLog;
+use App\Support\BranchContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 
@@ -11,7 +13,8 @@ class AuditLogger
     public function log(Request $request, string $event, Model $model, array $old = [], array $new = []): void
     {
         AuditLog::create([
-            'company_id' => $model->company_id ?? null,
+            'company_id' => $model instanceof Company ? $model->getKey() : ($model->company_id ?? null),
+            'branch_id' => $model->branch_id ?? (app()->bound(BranchContext::class) ? app(BranchContext::class)->id() : null),
             'user_id' => optional($request->user())->id,
             'event' => $event,
             'auditable_type' => get_class($model),

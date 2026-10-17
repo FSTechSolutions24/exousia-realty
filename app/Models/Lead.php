@@ -2,16 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Lead extends Model
 {
-    use HasFactory, SoftDeletes;
+    use BelongsToBranch, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'company_id', 'pipeline_stage_id', 'assigned_to', 'created_by', 'name', 'phone_original',
+        'company_id', 'branch_id', 'pipeline_stage_id', 'assigned_to', 'created_by', 'name', 'phone_original',
         'phone_normalized', 'email', 'source', 'intent', 'budget_min', 'budget_max', 'currency',
         'preferred_locations', 'property_type', 'bedrooms', 'notes', 'next_follow_up_at', 'last_contacted_at',
     ];

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { UserPlus, Users, ShieldCheck } from '@lucide/vue'
-import { api } from '../api'
+import { Download, UserPlus, Users, ShieldCheck } from '@lucide/vue'
+import { api, downloadExcel } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 interface TeamMember { id: number; user: { id: number; name: string; email: string }; role: string; status: 'active' | 'inactive'; joined_at: string | null }
@@ -10,6 +10,7 @@ const auth = useAuthStore()
 const members = ref<TeamMember[]>([])
 const invitations = ref<Invitation[]>([])
 const loading = ref(true)
+const exporting = ref(false)
 const saving = ref(false)
 const error = ref('')
 const success = ref('')
@@ -28,6 +29,15 @@ async function load() {
   } catch (exception: any) {
     error.value = exception.response?.data?.message || 'Unable to load the team.'
   } finally { loading.value = false }
+}
+
+async function exportTeam() {
+  exporting.value = true; error.value = ''
+  try {
+    await downloadExcel('/exports/team', {}, 'team.xlsx')
+  } catch (exception: any) {
+    error.value = exception.response?.data?.message || 'Unable to export the team directory.'
+  } finally { exporting.value = false }
 }
 
 async function addMember() {
@@ -73,7 +83,7 @@ onMounted(load)
 
 <template>
   <div>
-    <header class="page-heading"><div><span class="eyebrow">WORKSPACE SETTINGS</span><h1>Team</h1><p>Manage who can access {{ auth.bootstrap?.company.name }} and what they can do.</p></div><div class="team-count"><Users :size="18" />{{ activeCount }} active {{ activeCount === 1 ? 'member' : 'members' }}</div></header>
+    <header class="page-heading"><div><span class="eyebrow">WORKSPACE SETTINGS</span><h1>Team</h1><p>Manage who can access {{ auth.bootstrap?.company.name }} and what they can do.</p></div><div class="lead-page-actions"><div class="team-count"><Users :size="18" />{{ activeCount }} active {{ activeCount === 1 ? 'member' : 'members' }}</div><button class="button secondary" :disabled="exporting" @click="exportTeam"><Download :size="16" />{{ exporting ? 'Preparing…' : 'Export Excel' }}</button></div></header>
     <div v-if="error" class="detail-alert">{{ error }}<button @click="error = ''">Dismiss</button></div>
     <div v-if="success" class="team-success">{{ success }}</div>
 

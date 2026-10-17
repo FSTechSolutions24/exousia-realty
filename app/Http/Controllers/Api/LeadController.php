@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\Lead;
 use App\Models\LeadActivity;
 use App\Models\PipelineStage;
@@ -59,20 +60,26 @@ class LeadController extends Controller
         try { $data['phone_normalized'] = $phones->normalize($data['phone']); }
         catch (\InvalidArgumentException $e) { throw ValidationException::withMessages(['phone' => $e->getMessage()]); }
 
-        $duplicate = Lead::where('company_id', $tenant->id())->where('phone_normalized', $data['phone_normalized'])->first();
-        $stage = PipelineStage::where('company_id', $tenant->id())->orderBy('position')->firstOrFail();
-        $attributes = $this->payload($data);
-        $attributes['company_id'] = $tenant->id();
-        $attributes['pipeline_stage_id'] = $data['pipeline_stage_id'] ?? $stage->id;
-        $attributes['created_by'] = $request->user()->id;
-        $attributes['phone_original'] = $data['phone'];
-        $lead = Lead::create($attributes);
+        [$lead, $duplicate] = DB::transaction(function () use ($request, $tenant, $data, $audit) {
+            $company = Company::whereKey($tenant->id())->lockForUpdate()->firstOrFail();
+            $this->ensureLeadCapacity($company);
+            $duplicate = Lead::where('company_id', $tenant->id())->where('phone_normalized', $data['phone_normalized'])->first();
+            $stage = PipelineStage::where('company_id', $tenant->id())->orderBy('position')->firstOrFail();
+            $attributes = $this->payload($data);
+            $attributes['company_id'] = $tenant->id();
+            $attributes['pipeline_stage_id'] = $data['pipeline_stage_id'] ?? $stage->id;
+            $attributes['created_by'] = $request->user()->id;
+            $attributes['phone_original'] = $data['phone'];
+            $lead = Lead::create($attributes);
 
-        LeadActivity::create([
-            'company_id' => $tenant->id(), 'lead_id' => $lead->id, 'user_id' => $request->user()->id,
-            'type' => 'created', 'title' => 'Lead created', 'occurred_at' => now(),
-        ]);
-        $audit->log($request, 'lead.created', $lead, [], Arr::except($lead->toArray(), ['notes']));
+            LeadActivity::create([
+                'company_id' => $tenant->id(), 'lead_id' => $lead->id, 'user_id' => $request->user()->id,
+                'type' => 'created', 'title' => 'Lead created', 'occurred_at' => now(),
+            ]);
+            $audit->log($request, 'lead.created', $lead, [], Arr::except($lead->toArray(), ['notes']));
+
+            return [$lead, $duplicate];
+        });
 
         return response()->json(['lead' => $lead->load(['stage', 'assignee']), 'duplicate_warning' => $duplicate ? ['id' => $duplicate->id, 'name' => $duplicate->name] : null], 201);
     }
@@ -254,6 +261,17 @@ class LeadController extends Controller
         }
 
         return $data;
+    }
+
+    private function ensureLeadCapacity(Company $company): void
+    {
+        $limit = app(\App\Services\SubscriptionService::class)->current($company)?->plan?->lead_limit;
+        if ($limit === null) return;
+
+        $count = Lead::withoutGlobalScope('branch')->withTrashed()->where('company_id', $company->id)->count();
+        if ($count >= $limit) {
+            throw ValidationException::withMessages(['plan' => "Your current plan allows up to {$limit} leads. Upgrade your plan to add more."]);
+        }
     }
 
     private function payload(array $data): array

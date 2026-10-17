@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { CalendarCheck, Check, Clock3, Plus } from '@lucide/vue'
-import { api } from '../api'
+import { CalendarCheck, Check, Clock3, Download, Plus } from '@lucide/vue'
+import { api, downloadExcel } from '../api'
 import { useAuthStore } from '../stores/auth'
 import Modal from '../components/Modal.vue'
 import { useTasksStore } from '../stores/tasks'
@@ -14,6 +14,7 @@ const counts = ref<Record<TaskBucket, number>>({ all: 0, overdue: 0, today: 0, u
 const bucket = ref<TaskBucket>('all')
 const bucketOptions: [TaskBucket, string][] = [['all', 'All open'], ['overdue', 'Overdue'], ['today', 'Due today'], ['upcoming', 'Upcoming']]
 const loading = ref(true)
+const exporting = ref(false)
 const showCreate = ref(false)
 const saving = ref(false)
 const error = ref('')
@@ -34,6 +35,15 @@ async function load() {
 async function selectBucket(value: TaskBucket) {
   bucket.value = value
   await load()
+}
+
+async function exportTasks() {
+  exporting.value = true; error.value = ''
+  try {
+    await downloadExcel('/exports/tasks', { bucket: bucket.value, open: 1 }, 'tasks.xlsx')
+  } catch (exception: any) {
+    error.value = exception.response?.data?.message || 'Unable to export tasks.'
+  } finally { exporting.value = false }
 }
 
 async function toggle(id: number) {
@@ -75,7 +85,7 @@ onMounted(load)
   <div>
     <header class="page-heading">
       <div><span class="eyebrow">FOLLOW-THROUGH</span><h1>Tasks</h1><p>Your focused list of calls, meetings, and follow-ups.</p></div>
-      <button class="button primary" @click="showCreate = true"><Plus />New task</button>
+      <div class="lead-page-actions"><button class="button secondary" :disabled="exporting" @click="exportTasks"><Download />{{ exporting ? 'Preparing…' : 'Export Excel' }}</button><button class="button primary" @click="showCreate = true"><Plus />New task</button></div>
     </header>
     <section class="panel task-page-panel">
       <nav class="task-tabs" aria-label="Filter follow-up tasks">

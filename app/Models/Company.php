@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class Company extends Model
 {
@@ -12,6 +13,13 @@ class Company extends Model
     protected $fillable = ['name', 'slug', 'phone', 'timezone', 'currency', 'locale', 'brand_color', 'logo_path', 'logo_mime_type', 'is_suspended', 'suspended_at', 'suspension_reason'];
 
     protected $casts = ['is_suspended' => 'boolean', 'suspended_at' => 'datetime'];
+
+    protected static function booted(): void
+    {
+        static::created(function (Company $company) {
+            if (Schema::hasTable('branches')) $company->branches()->create(['name' => 'Main Branch', 'code' => 'MAIN', 'is_main' => true, 'is_active' => true]);
+        });
+    }
 
     public function memberships()
     {
@@ -32,4 +40,5 @@ class Company extends Model
     public function propertyListings() { return $this->hasMany(PropertyListing::class); }
     public function developers() { return $this->hasMany(RealEstateDeveloper::class); }
     public function deals() { return $this->hasMany(Deal::class); }
+    public function branches() { return $this->hasMany(Branch::class); }
 }

@@ -1,7 +1,7 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { BadgeCheck, Building2, CalendarDays, Eye, Handshake, Pencil, Plus, Search } from '@lucide/vue'
-import { api } from '../api'
+import { BadgeCheck, Building2, CalendarDays, Download, Eye, Handshake, Pencil, Plus, Search } from '@lucide/vue'
+import { api, downloadExcel } from '../api'
 import { useAuthStore } from '../stores/auth'
 import Modal from '../components/Modal.vue'
 
@@ -20,6 +20,7 @@ const leadOptions = ref<LeadOption[]>([])
 const propertyOptions = ref<PropertyOption[]>([])
 const pagination = ref<any>({})
 const loading = ref(true)
+const exporting = ref(false)
 const saving = ref(false)
 const error = ref('')
 const search = ref('')
@@ -67,6 +68,15 @@ async function load() {
   } catch (exception: any) {
     error.value = exception.response?.data?.message || 'Unable to load deals.'
   } finally { loading.value = false }
+}
+
+async function exportDeals() {
+  exporting.value = true; error.value = ''
+  try {
+    await downloadExcel('/exports/deals', { search: search.value, status: statusFilter.value }, 'deals.xlsx')
+  } catch (exception: any) {
+    error.value = exception.response?.data?.message || 'Unable to export deals.'
+  } finally { exporting.value = false }
 }
 
 async function loadOptions() {
@@ -208,7 +218,7 @@ onMounted(() => { load(); loadOptions() })
 
 <template>
   <div>
-    <header class="page-heading"><div><span class="eyebrow">SALES PIPELINE</span><h1>Deals</h1><p>Move qualified leads through negotiation, reservation, contract, and close.</p></div><button v-if="canCreate" class="button primary" @click="openCreate"><Plus :size="18" />Add deal</button></header>
+    <header class="page-heading"><div><span class="eyebrow">SALES PIPELINE</span><h1>Deals</h1><p>Move qualified leads through negotiation, reservation, contract, and close.</p></div><div class="lead-page-actions"><button class="button secondary" :disabled="exporting" @click="exportDeals"><Download :size="16" />{{ exporting ? 'Preparing…' : 'Export Excel' }}</button><button v-if="canCreate" class="button primary" @click="openCreate"><Plus :size="18" />Add deal</button></div></header>
     <div v-if="error && !showEditor" class="detail-alert">{{ error }}<button @click="error = ''">Dismiss</button></div>
     <section class="deal-stats"><article><span><Handshake /></span><div><strong>{{ pagination.total || 0 }}</strong><small>Deals in this view</small></div></article><article><span class="active"><Building2 /></span><div><strong>{{ activeCount }}</strong><small>Active on this page</small></div></article><article><span class="won"><BadgeCheck /></span><div><strong>{{ wonCount }}</strong><small>Closed won on this page</small></div></article></section>
     <section class="panel deals-panel">

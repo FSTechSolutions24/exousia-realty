@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
-import { Building2, ImagePlus, Pencil, Plus, Search, Upload, X } from '@lucide/vue'
-import { api } from '../api'
+import { Building2, Download, ImagePlus, Pencil, Plus, Search, Upload, X } from '@lucide/vue'
+import { api, downloadExcel } from '../api'
 import { useAuthStore } from '../stores/auth'
 import Modal from '../components/Modal.vue'
 
@@ -21,6 +21,7 @@ const auth = useAuthStore()
 const listings = ref<PropertyListing[]>([])
 const pagination = ref<any>({})
 const loading = ref(true)
+const exporting = ref(false)
 const saving = ref(false)
 const error = ref('')
 const search = ref('')
@@ -62,6 +63,15 @@ async function load() {
   } catch (exception: any) {
     error.value = exception.response?.data?.message || 'Unable to load inventory.'
   } finally { loading.value = false }
+}
+
+async function exportInventory() {
+  exporting.value = true; error.value = ''
+  try {
+    await downloadExcel('/exports/inventory', { search: search.value, listing_type: listingType.value, status: status.value }, 'inventory.xlsx')
+  } catch (exception: any) {
+    error.value = exception.response?.data?.message || 'Unable to export inventory.'
+  } finally { exporting.value = false }
 }
 
 async function loadMasterLocations() {
@@ -153,7 +163,7 @@ onMounted(() => { load(); loadMasterLocations(); loadDevelopers() })
 
 <template>
   <div>
-    <header class="page-heading"><div><span class="eyebrow">PROPERTY CATALOGUE</span><h1>Inventory</h1><p>Keep property details, pricing, availability, and photos together.</p></div><button v-if="canManage" class="button primary" @click="openCreate"><Plus :size="18" />Add property</button></header>
+    <header class="page-heading"><div><span class="eyebrow">PROPERTY CATALOGUE</span><h1>Inventory</h1><p>Keep property details, pricing, availability, and photos together.</p></div><div class="lead-page-actions"><button class="button secondary" :disabled="exporting" @click="exportInventory"><Download :size="16" />{{ exporting ? 'Preparing…' : 'Export Excel' }}</button><button v-if="canManage" class="button primary" @click="openCreate"><Plus :size="18" />Add property</button></div></header>
     <div v-if="error && !showEditor" class="detail-alert">{{ error }}<button @click="error = ''">Dismiss</button></div>
     <section class="inventory-stats"><article><span class="inventory-stat-icon"><Building2 /></span><div><strong>{{ pagination.total || 0 }}</strong><small>Properties in catalogue</small></div></article><article><span class="inventory-stat-icon available"><Building2 /></span><div><strong>{{ totalAvailable }}</strong><small>Available on this page</small></div></article></section>
     <section class="panel inventory-panel">

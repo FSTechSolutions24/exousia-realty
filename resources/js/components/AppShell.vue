@@ -1,27 +1,30 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BadgeCheck, Building2, ChevronDown, CircleHelp, ClipboardCheck, ImagePlus, LayoutDashboard, MapPinned, Menu, Search, Settings, ShieldCheck, Sparkles, Users, WalletCards, X } from '@lucide/vue'
+import { BadgeCheck, Building2, ChevronDown, CircleHelp, ClipboardCheck, ImagePlus, LayoutDashboard, MapPinned, Menu, MessageCircle, ReceiptText, Search, Settings, ShieldCheck, Sparkles, Users, WalletCards, X } from '@lucide/vue'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from '../i18n'
 import { useTasksStore } from '../stores/tasks'
+import { api } from '../api'
 
 const auth = useAuthStore(); const tasks = useTasksStore(); const route = useRoute(); const router = useRouter(); const { t } = useI18n()
 const mobileOpen = ref(false); const profileOpen = ref(false)
+const branches = ref<any[]>([]); const activeBranchId = ref(localStorage.getItem('exousia_branch_id') || '')
 const nav = [
   ['/', LayoutDashboard, 'dashboard'], ['/leads', Users, 'leads'], ['/tasks', ClipboardCheck, 'tasks'],
-  ['/inventory', Building2, 'inventory'], ['/deals', WalletCards, 'deals'], ['/commissions', BadgeCheck, 'commissions'], ['/reports', Sparkles, 'reports'], ['/settings/locations', MapPinned, 'locations'], ['/settings/developers', Building2, 'developers'], ['/settings/company', ImagePlus, 'company'], ['/team', Settings, 'team'], ['/billing', WalletCards, 'billing'],
+  ['/inventory', Building2, 'inventory'], ['/deals', WalletCards, 'deals'], ['/finance', ReceiptText, 'finance'], ['/commissions', BadgeCheck, 'commissions'], ['/reports', Sparkles, 'reports'], ['/settings/locations', MapPinned, 'locations'], ['/settings/developers', Building2, 'developers'], ['/settings/branches', Building2, 'branches'], ['/settings/whatsapp', MessageCircle, 'whatsapp'], ['/settings/company', ImagePlus, 'company'], ['/team', Settings, 'team'], ['/billing', WalletCards, 'billing'],
 ] as const
 const canViewReports = computed(() => ['owner', 'admin', 'manager', 'finance', 'agent'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.some(permission => ['view_reports', 'view_own_reports'].includes(permission)))
 const canViewCommissions = computed(() => ['owner', 'admin', 'manager', 'finance', 'agent'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.some(permission => ['view_commissions', 'view_own_commissions'].includes(permission)))
 const canViewInventory = computed(() => ['owner', 'admin', 'manager', 'agent', 'operations'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.includes('view_inventory'))
+const canViewFinance = computed(() => ['owner', 'admin', 'manager', 'finance'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.includes('view_invoices'))
 const canManageSettings = computed(() => ['owner', 'admin'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.includes('manage_settings'))
-const visibleNav = computed(() => nav.filter(([path]) => path !== '/reports' || canViewReports.value).filter(([path]) => path !== '/commissions' || canViewCommissions.value).filter(([path]) => path !== '/settings/developers' || canViewInventory.value).filter(([path]) => path !== '/settings/company' || canManageSettings.value))
+const visibleNav = computed(() => nav.filter(([path]) => path !== '/reports' || canViewReports.value).filter(([path]) => path !== '/commissions' || canViewCommissions.value).filter(([path]) => path !== '/finance' || canViewFinance.value).filter(([path]) => path !== '/settings/developers' || canViewInventory.value).filter(([path]) => path !== '/settings/company' || canManageSettings.value).filter(([path]) => path !== '/settings/branches' || ['owner', 'admin'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.includes('manage_branches')))
 const groups = [
   { id: 'workspace', title: 'WORKSPACE', paths: ['/', '/tasks'] },
-  { id: 'sales', title: 'SALES & CLIENTS', paths: ['/leads', '/deals', '/commissions'] },
+  { id: 'sales', title: 'SALES & CLIENTS', paths: ['/leads', '/deals', '/finance', '/commissions'] },
   { id: 'property', title: 'PROPERTY PORTFOLIO', paths: ['/inventory', '/settings/developers', '/settings/locations'] },
-  { id: 'manage', title: 'COMPANY & INSIGHTS', paths: ['/reports', '/team', '/settings/company', '/billing'] },
+  { id: 'manage', title: 'COMPANY & INSIGHTS', paths: ['/reports', '/team', '/settings/branches', '/settings/whatsapp', '/settings/company', '/billing'] },
 ] as const
 const expandedGroup = ref('workspace')
 const visibleGroups = computed(() => groups.map(group => ({ ...group, items: visibleNav.value.filter(([path]) => (group.paths as readonly string[]).includes(path)) })).filter(group => group.items.length))
@@ -35,8 +38,11 @@ function isActive(path: string) { return path === '/' ? route.path === '/' : rou
 async function logout() { await auth.logout(); router.replace('/login') }
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 function refreshWhenVisible() { if (document.visibilityState === 'visible') void tasks.refresh(true) }
+async function loadBranches(){try{const {data}=await api.get('/branches');branches.value=data.branches||[];if(!branches.value.some(branch=>String(branch.id)===activeBranchId.value)&&data.current_branch_id){activeBranchId.value=String(data.current_branch_id);localStorage.setItem('exousia_branch_id',activeBranchId.value)}}catch{branches.value=[]}}
+function switchBranch(){if(activeBranchId.value)localStorage.setItem('exousia_branch_id',activeBranchId.value);window.location.reload()}
 watch(companyId, (id) => { if (id) void tasks.refresh(true); else tasks.reset() }, { immediate: true })
 onMounted(() => {
+  void loadBranches()
   refreshTimer = setInterval(() => void tasks.refresh(true), 30_000)
   window.addEventListener('focus', refreshWhenVisible)
   document.addEventListener('visibilitychange', refreshWhenVisible)
@@ -58,6 +64,7 @@ onUnmounted(() => {
         <span><small>WORKSPACE</small><strong>{{ auth.bootstrap?.company.name }}</strong></span>
         <ChevronDown :size="15" />
       </div>
+      <label v-if="branches.length" class="branch-switcher"><span>ACTIVE BRANCH</span><select v-model="activeBranchId" @change="switchBranch"><option v-for="branch in branches" :key="branch.id" :value="String(branch.id)">{{ branch.name }}</option></select></label>
       <nav class="main-nav">
         <section v-for="group in visibleGroups" :key="group.id" class="nav-group">
           <button class="nav-group-toggle" type="button" :aria-expanded="expandedGroup === group.id" :aria-controls="`nav-group-${group.id}`" @click="toggleGroup(group.id)">

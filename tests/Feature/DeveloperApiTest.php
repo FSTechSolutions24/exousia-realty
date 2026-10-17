@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\PreferredLocation;
 use App\Models\PropertyListing;
 use App\Models\RealEstateDeveloper;
+use App\Models\SubscriptionPlan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -57,6 +58,20 @@ class DeveloperApiTest extends TestCase
             ->getJson('/api/v1/developers?search=Cairo')->assertOk()->assertJsonPath('data.0.id', $developer->id);
         $this->postJson('/api/v1/developers', ['name' => 'Unauthorized Partner'])->assertForbidden();
         $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)->getJson('/api/v1/developers?active=not-a-boolean')->assertUnprocessable();
+    }
+
+    public function test_company_cannot_add_developers_above_its_plan_limit(): void
+    {
+        [$company, $owner] = $this->workspace('limited');
+        SubscriptionPlan::where('slug', 'free-trial')->firstOrFail()->update(['developer_limit' => 1]);
+
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)
+            ->postJson('/api/v1/developers', ['name' => 'First Partner'])->assertCreated();
+        $this->postJson('/api/v1/developers', ['name' => 'Second Partner'])
+            ->assertUnprocessable()->assertJsonValidationErrors('plan');
+
+        $this->assertDatabaseCount('real_estate_developers', 1);
+        $this->assertDatabaseHas('real_estate_developers', ['company_id' => $company->id, 'name' => 'First Partner']);
     }
 
     private function workspace(string $slug): array

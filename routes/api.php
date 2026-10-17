@@ -22,6 +22,11 @@ use App\Http\Controllers\Api\PlatformPaymentSettingsController;
 use App\Http\Controllers\Api\PropertyViewingController;
 use App\Http\Controllers\Api\RealEstateDeveloperController;
 use App\Http\Controllers\Api\CompanyBrandingController;
+use App\Http\Controllers\Api\DataExportController;
+use App\Http\Controllers\Api\WhatsAppController;
+use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\InstallmentController;
+use App\Http\Controllers\Api\BranchController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -53,6 +58,8 @@ Route::prefix('v1')->middleware('web')->group(function () {
             Route::get('/overview', [PlatformAdminController::class, 'overview']);
             Route::get('/paymob-settings', [PlatformPaymentSettingsController::class, 'show']);
             Route::put('/paymob-settings', [PlatformPaymentSettingsController::class, 'update']);
+            Route::get('/plans', [PlatformAdminController::class, 'plans']);
+            Route::put('/plans/{plan}', [PlatformAdminController::class, 'updatePlan']);
             Route::get('/companies', [PlatformAdminController::class, 'companies']);
             Route::post('/companies/{company}/suspend', [PlatformAdminController::class, 'suspend']);
             Route::post('/companies/{company}/activate', [PlatformAdminController::class, 'activate']);
@@ -62,7 +69,7 @@ Route::prefix('v1')->middleware('web')->group(function () {
         Route::post('/companies/{company}/switch', [BootstrapController::class, 'switchCompany']);
 
         Route::middleware('verified')->group(function () {
-          Route::middleware('tenant')->group(function () {
+          Route::middleware(['tenant', 'branch'])->group(function () {
             Route::get('/bootstrap', BootstrapController::class);
             Route::get('/company/logo', [CompanyBrandingController::class, 'show'])->name('company.logo');
             Route::get('/subscriptions', [SubscriptionController::class, 'status']);
@@ -70,8 +77,31 @@ Route::prefix('v1')->middleware('web')->group(function () {
             Route::post('/subscriptions/checkout', [SubscriptionController::class, 'checkout'])->middleware('throttle:5,1');
             Route::middleware('subscription')->group(function () {
             Route::get('/dashboard', DashboardController::class);
+            Route::get('/branches', [BranchController::class, 'index']);
+            Route::post('/branches', [BranchController::class, 'store']);
+            Route::put('/branches/{branch}', [BranchController::class, 'update']);
+            Route::put('/branches/{branch}/members', [BranchController::class, 'members']);
+            Route::get('/invoices', [InvoiceController::class, 'index']);
+            Route::post('/invoices', [InvoiceController::class, 'store']);
+            Route::get('/invoices/{invoice}', [InvoiceController::class, 'show']);
+            Route::post('/invoices/{invoice}/issue', [InvoiceController::class, 'issue']);
+            Route::post('/invoices/{invoice}/payments', [InvoiceController::class, 'payment']);
+            Route::get('/installments', [InstallmentController::class, 'index']);
+            Route::post('/deals/{deal}/installments/generate', [InstallmentController::class, 'generate']);
+            Route::post('/installments/{installment}/payments', [InstallmentController::class, 'pay']);
             Route::post('/company/logo', [CompanyBrandingController::class, 'store']);
             Route::delete('/company/logo', [CompanyBrandingController::class, 'destroy']);
+            Route::get('/whatsapp/settings', [WhatsAppController::class, 'settings']);
+            Route::put('/whatsapp/accounts/{scope}', [WhatsAppController::class, 'saveAccount']);
+            Route::delete('/whatsapp/accounts/{scope}', [WhatsAppController::class, 'disconnectAccount']);
+            Route::patch('/whatsapp/templates/{template}', [WhatsAppController::class, 'updateTemplate']);
+            Route::get('/exports/leads', [DataExportController::class, 'leads']);
+            Route::get('/exports/inventory', [DataExportController::class, 'inventory']);
+            Route::get('/exports/developers', [DataExportController::class, 'developers']);
+            Route::get('/exports/deals', [DataExportController::class, 'deals']);
+            Route::get('/exports/commissions', [DataExportController::class, 'commissions']);
+            Route::get('/exports/tasks', [DataExportController::class, 'tasks']);
+            Route::get('/exports/team', [DataExportController::class, 'team']);
             Route::get('/developers', [RealEstateDeveloperController::class, 'index']);
             Route::post('/developers', [RealEstateDeveloperController::class, 'store']);
             Route::put('/developers/{developer}', [RealEstateDeveloperController::class, 'update']);
@@ -112,6 +142,9 @@ Route::prefix('v1')->middleware('web')->group(function () {
             Route::delete('/leads/{lead}', [LeadController::class, 'archive']);
             Route::post('/leads/{lead}/restore', [LeadController::class, 'restore']);
             Route::post('/leads/{lead}/activities', [LeadController::class, 'addActivity']);
+            Route::get('/leads/{lead}/whatsapp/options', [WhatsAppController::class, 'options']);
+            Route::get('/leads/{lead}/whatsapp/messages', [WhatsAppController::class, 'history']);
+            Route::post('/leads/{lead}/whatsapp/messages', [WhatsAppController::class, 'send']);
             Route::get('/preferred-locations', [PreferredLocationController::class, 'index']);
             Route::post('/preferred-locations', [PreferredLocationController::class, 'store']);
             Route::put('/preferred-locations/{preferredLocation}', [PreferredLocationController::class, 'update']);

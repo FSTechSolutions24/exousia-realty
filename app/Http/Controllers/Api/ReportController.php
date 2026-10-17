@@ -7,6 +7,8 @@ use App\Models\Deal;
 use App\Models\DealCommission;
 use App\Models\Lead;
 use App\Models\PipelineStage;
+use App\Services\AuditLogger;
+use App\Services\ExcelExportService;
 use App\Support\TenantContext;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\Request;
@@ -16,7 +18,7 @@ class ReportController extends Controller
 {
     private const DEAL_STATUSES = ['negotiation', 'reserved', 'contracted', 'closed_won', 'closed_lost'];
 
-    public function __invoke(Request $request, TenantContext $tenant)
+    public function __invoke(Request $request, TenantContext $tenant, ExcelExportService $excel, AuditLogger $audit)
     {
         $membership = $request->attributes->get('membership');
         abort_unless($membership->can('view_reports') || $membership->can('view_own_reports'), 403);
@@ -202,7 +204,39 @@ class ReportController extends Controller
             ],
         ];
 
+        if ($request->query('format') === 'xlsx') {
+            $rows = collect([
+                ['section' => 'Period', 'name' => 'Current', 'details' => $payload['period']['from'].' to '.$payload['period']['to']],
+                ['section' => 'Period', 'name' => 'Previous', 'details' => $payload['comparison']['from'].' to '.$payload['comparison']['to']],
+            ]);
+            foreach ($payload['metrics'] as $name => $value) $rows->push($this->reportMetricRow('Metric', $name, $value));
+            foreach ($payload['funnel'] as $row) $rows->push(['section' => 'Lead stage', 'name' => $row['name'], 'count' => $row['count'], 'details' => $row['name_ar'] ?? null]);
+            foreach ($payload['sources'] as $row) $rows->push(['section' => 'Lead source', 'name' => $row['source'], 'count' => $row['lead_count'], 'rate' => $row['conversion_rate'] / 100, 'details' => 'Won: '.$row['won_count']]);
+            foreach ($payload['deals_by_status'] as $row) $rows->push(['section' => 'Deal status', 'name' => $row['status'], 'count' => $row['count'], 'amount' => $this->minorUnits($row['value_minor_units'])]);
+            foreach ($payload['sales_performance'] as $row) $rows->push(['section' => 'Sales performance', 'name' => $row['salesperson_name'], 'count' => $row['units_sold'], 'amount' => $this->minorUnits($row['agreed_value_minor_units']), 'details' => 'Priced deals: '.$row['priced_deals']]);
+            foreach ($payload['commissions_by_employee'] as $row) $rows->push(['section' => 'Employee commissions', 'name' => $row['payee_name'], 'count' => $row['entry_count'], 'amount' => $this->minorUnits($row['pending_minor_units'] + $row['approved_minor_units'] + $row['paid_minor_units']), 'details' => 'Pending: '.$this->minorUnits($row['pending_minor_units']).' EGP; approved: '.$this->minorUnits($row['approved_minor_units']).' EGP; paid: '.$this->minorUnits($row['paid_minor_units']).' EGP']);
+            foreach ($payload['commission_entries'] as $row) $rows->push(['section' => 'Commission by unit', 'name' => $row['unit_reference'], 'amount' => $this->minorUnits($row['amount_minor_units']), 'status' => $row['status'], 'details' => $row['payee_name'].'; '.$row['calculation_type'].'; deal #'.$row['deal_id']]);
+            foreach ($payload['comparison']['metrics'] as $name => $value) $rows->push($this->reportMetricRow('Previous period metric', $name, $value));
+
+            $response = $excel->download($tenant->id(), 'exousia-report-'.$period, 'Report', [
+                ['key' => 'section', 'label' => 'Section', 'type' => 'string', 'width' => 24],
+                ['key' => 'name', 'label' => 'Name', 'type' => 'string', 'width' => 28],
+                ['key' => 'count', 'label' => 'Count', 'type' => 'integer', 'width' => 12],
+                ['key' => 'rate', 'label' => 'Rate', 'type' => 'percent', 'width' => 12],
+                ['key' => 'amount', 'label' => 'Amount', 'type' => 'currency', 'width' => 18],
+                ['key' => 'status', 'label' => 'Status', 'type' => 'string', 'width' => 15],
+                ['key' => 'details', 'label' => 'Details', 'type' => 'string', 'width' => 44],
+            ], $rows);
+            $audit->log($request, 'export.reports', $tenant->company(), [], [
+                'company_id' => $tenant->id(), 'format' => 'xlsx', 'period' => $period, 'row_count' => $rows->count(),
+            ]);
+            return $response;
+        }
+
         if ($request->query('format') === 'csv') {
+            $audit->log($request, 'export.reports', $tenant->company(), [], [
+                'company_id' => $tenant->id(), 'format' => 'csv', 'period' => $period,
+            ]);
             return response()->streamDownload(function () use ($payload) {
                 $output = fopen('php://output', 'w');
                 $safe = fn ($value) => is_string($value) && preg_match('/^[=+\-@\t\r]/', $value) ? "'".$value : $value;
@@ -226,5 +260,19 @@ class ReportController extends Controller
         }
 
         return response()->json($payload);
+    }
+
+    private function reportMetricRow(string $section, string $name, int|float $value): array
+    {
+        $row = ['section' => $section, 'name' => ucwords(str_replace('_', ' ', $name))];
+        if (str_ends_with($name, '_minor_units')) $row['amount'] = $this->minorUnits((int) $value);
+        elseif (str_ends_with($name, '_rate')) $row['rate'] = $value / 100;
+        else $row['count'] = $value;
+        return $row;
+    }
+
+    private function minorUnits(int $minor): string
+    {
+        return intdiv($minor, 100).'.'.str_pad((string) ($minor % 100), 2, '0', STR_PAD_LEFT);
     }
 }

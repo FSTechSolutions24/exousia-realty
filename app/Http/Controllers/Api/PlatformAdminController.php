@@ -26,6 +26,53 @@ class PlatformAdminController extends Controller
         ], 'is_platform_admin' => true]);
     }
 
+    public function plans()
+    {
+        return response()->json(['data' => SubscriptionPlan::orderBy('position')->get()]);
+    }
+
+    public function updatePlan(Request $request, int $plan)
+    {
+        $plan = SubscriptionPlan::findOrFail($plan);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:100'],
+            'description' => ['nullable', 'string', 'max:2000'],
+            'monthly_price_egp' => ['required', 'string', 'regex:/^\d{1,10}(?:\.\d{1,2})?$/'],
+            'yearly_price_egp' => ['nullable', 'string', 'regex:/^\d{1,10}(?:\.\d{1,2})?$/'],
+            'team_member_limit' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'lead_limit' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'listing_limit' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'developer_limit' => ['nullable', 'integer', 'min:1', 'max:4294967295'],
+            'branch_limit' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'features' => ['required', 'array', 'max:20'],
+            'features.*' => ['required', 'string', 'max:180'],
+            'is_active' => ['required', 'boolean'],
+            'is_featured' => ['required', 'boolean'],
+            'position' => ['required', 'integer', 'min:0', 'max:65535'],
+        ]);
+        if ($plan->isFreeTrial() && ! $data['is_active']) {
+            return response()->json(['message' => 'The free-trial plan must remain active.'], 422);
+        }
+
+        $before = $plan->only(['name', 'description', 'monthly_price_minor', 'yearly_price_minor', 'team_member_limit', 'lead_limit', 'listing_limit', 'developer_limit', 'branch_limit', 'features', 'is_active', 'is_featured', 'position']);
+        $plan->update([
+            'name' => $data['name'], 'description' => $data['description'] ?? null,
+            'monthly_price_minor' => $this->egpToMinor($data['monthly_price_egp']),
+            'yearly_price_minor' => isset($data['yearly_price_egp']) && $data['yearly_price_egp'] !== '' ? $this->egpToMinor($data['yearly_price_egp']) : null,
+            'team_member_limit' => $data['team_member_limit'] ?? null, 'lead_limit' => $data['lead_limit'] ?? null,
+            'listing_limit' => $data['listing_limit'] ?? null, 'developer_limit' => $data['developer_limit'] ?? null,
+            'branch_limit' => $data['branch_limit'] ?? null,
+            'features' => array_values(array_map('trim', $data['features'])), 'is_active' => $data['is_active'],
+            'is_featured' => $data['is_featured'], 'position' => $data['position'],
+        ]);
+        $this->audit($request, null, 'subscription_plan_updated', 'Plan details and limits updated.', [
+            'plan_id' => $plan->id, 'slug' => $plan->slug, 'before' => $before,
+            'after' => $plan->only(['name', 'description', 'monthly_price_minor', 'yearly_price_minor', 'team_member_limit', 'lead_limit', 'listing_limit', 'developer_limit', 'branch_limit', 'features', 'is_active', 'is_featured', 'position']),
+        ]);
+
+        return response()->json(['plan' => $plan->fresh()]);
+    }
+
     public function overview(Request $request)
     {
         [$from, $to] = $this->dateRange($request);
@@ -190,10 +237,16 @@ class PlatformAdminController extends Controller
         ];
     }
 
-    private function audit(Request $request, Company $company, string $action, ?string $reason, array $details = []): void
+    private function egpToMinor(string $amount): int
+    {
+        [$whole, $fraction] = array_pad(explode('.', $amount, 2), 2, '');
+        return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
+    }
+
+    private function audit(Request $request, ?Company $company, string $action, ?string $reason, array $details = []): void
     {
         PlatformAdminAction::create([
-            'admin_user_id' => $request->user()->id, 'company_id' => $company->id, 'action' => $action,
+            'admin_user_id' => $request->user()->id, 'company_id' => $company?->id, 'action' => $action,
             'reason' => $reason, 'details' => $details, 'ip_address' => $request->ip(),
             'user_agent' => substr((string) $request->userAgent(), 0, 1000), 'created_at' => now(),
         ]);

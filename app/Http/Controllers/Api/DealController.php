@@ -69,6 +69,7 @@ class DealController extends Controller
             $data['amount_received_minor_units'] = $data['amount_received_egp'] === null ? null : $this->toMinorUnitsAllowZero($data['amount_received_egp']);
             unset($data['amount_received_egp']);
         }
+
         if (($data['status'] ?? null) === 'closed_won') {
             $data += $this->salesAttribution($lead, $tenant->id(), $request->user()->id);
             $data['closed_at'] = now();
@@ -104,6 +105,15 @@ class DealController extends Controller
         if (array_key_exists('amount_received_egp', $data)) {
             $data['amount_received_minor_units'] = $data['amount_received_egp'] === null ? null : $this->toMinorUnitsAllowZero($data['amount_received_egp']);
             unset($data['amount_received_egp']);
+        }
+
+        if ($deal->installments()->exists()) {
+            if (array_key_exists('agreed_price_minor_units', $data) && $data['agreed_price_minor_units'] !== $deal->agreed_price_minor_units) {
+                throw ValidationException::withMessages(['agreed_price_egp' => 'The agreed price is locked after an installment schedule is created. Record the price adjustment as a separately audited agreement.']);
+            }
+            if (array_key_exists('amount_received_minor_units', $data) && $data['amount_received_minor_units'] !== $deal->amount_received_minor_units) {
+                throw ValidationException::withMessages(['amount_received_egp' => 'This deal has an installment schedule. Record new receipts against an installment instead.']);
+            }
         }
 
         $closing = ($data['status'] ?? $deal->status) === 'closed_won' && $deal->status !== 'closed_won';

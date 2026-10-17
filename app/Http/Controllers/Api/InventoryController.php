@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\PropertyListing;
 use App\Models\PropertyListingActivity;
 use App\Models\PropertyPhoto;
@@ -10,6 +11,7 @@ use App\Models\PreferredLocation;
 use App\Services\AuditLogger;
 use App\Support\TenantContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -69,14 +71,18 @@ class InventoryController extends Controller
         $this->applyDeveloper($data, $tenant);
         $priceMinor = $this->toMinorUnits($data['price_egp']);
         unset($data['price_egp']);
-        $data['reference_code'] = ($data['reference_code'] ?? null) ?: $this->generateReference($tenant);
-
-        $listing = PropertyListing::create($data + [
-            'company_id' => $tenant->id(), 'listed_by' => $request->user()->id,
-            'price_minor_units' => $priceMinor, 'currency' => 'EGP',
-        ]);
-        $this->recordActivity($request, $listing, 'created', [], $listing->only(['reference_code', 'title', 'listing_type', 'status', 'price_minor_units', 'developer_id']));
-        $audit->log($request, 'inventory.listing_created', $listing, [], $listing->only(['reference_code', 'title', 'listing_type', 'status', 'price_minor_units', 'developer_id']));
+        $listing = DB::transaction(function () use ($request, $tenant, $data, $priceMinor, $audit) {
+            $company = Company::whereKey($tenant->id())->lockForUpdate()->firstOrFail();
+            $this->ensureListingCapacity($company);
+            $data['reference_code'] = ($data['reference_code'] ?? null) ?: $this->generateReference($tenant);
+            $listing = PropertyListing::create($data + [
+                'company_id' => $tenant->id(), 'listed_by' => $request->user()->id,
+                'price_minor_units' => $priceMinor, 'currency' => 'EGP',
+            ]);
+            $this->recordActivity($request, $listing, 'created', [], $listing->only(['reference_code', 'title', 'listing_type', 'status', 'price_minor_units', 'developer_id']));
+            $audit->log($request, 'inventory.listing_created', $listing, [], $listing->only(['reference_code', 'title', 'listing_type', 'status', 'price_minor_units', 'developer_id']));
+            return $listing;
+        });
 
         return response()->json($this->serialize($listing->load(['photos', 'developer'])), 201);
     }
@@ -278,5 +284,15 @@ class InventoryController extends Controller
     private function authorizeManage(Request $request): void
     {
         abort_unless($request->attributes->get('membership')->can('manage_inventory'), 403);
+    }
+
+    private function ensureListingCapacity(Company $company): void
+    {
+        $limit = app(\App\Services\SubscriptionService::class)->current($company)?->plan?->listing_limit;
+        if ($limit === null) return;
+        $count = PropertyListing::withoutGlobalScope('branch')->withTrashed()->where('company_id', $company->id)->count();
+        if ($count >= $limit) {
+            throw ValidationException::withMessages(['plan' => "Your current plan allows up to {$limit} property listings. Upgrade your plan to add another."]);
+        }
     }
 }

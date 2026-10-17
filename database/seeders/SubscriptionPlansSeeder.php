@@ -17,7 +17,8 @@ class SubscriptionPlansSeeder extends Seeder
         ];
 
         foreach ($plans as $plan) {
-            SubscriptionPlan::updateOrCreate(['slug' => $plan['slug']], $plan + ['currency' => 'EGP', 'is_active' => true]);
+            // Seed new installations without overwriting plans configured by the platform owner.
+            SubscriptionPlan::firstOrCreate(['slug' => $plan['slug']], $plan + ['currency' => 'EGP', 'is_active' => true]);
         }
     }
 }

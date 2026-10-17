@@ -2,15 +2,16 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PropertyListing extends Model
 {
-    use SoftDeletes;
+    use BelongsToBranch, SoftDeletes;
 
     protected $fillable = [
-        'company_id', 'reference_code', 'title', 'description', 'listing_type', 'property_type', 'status',
+        'company_id', 'branch_id', 'reference_code', 'title', 'description', 'listing_type', 'property_type', 'status',
         'location', 'preferred_location_id', 'developer_id', 'address', 'price_minor_units', 'currency', 'bedrooms', 'bathrooms', 'area_sqm', 'listed_by',
     ];
 

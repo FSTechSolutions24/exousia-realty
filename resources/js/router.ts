@@ -26,6 +26,10 @@ import BillingView from './views/BillingView.vue'
 import PlatformAdminView from './views/PlatformAdminView.vue'
 import RealEstateDevelopersView from './views/RealEstateDevelopersView.vue'
 import CompanyProfileView from './views/CompanyProfileView.vue'
+import WhatsAppSettingsView from './views/WhatsAppSettingsView.vue'
+import FinanceView from './views/FinanceView.vue'
+import InvoiceDetailView from './views/InvoiceDetailView.vue'
+import BranchesView from './views/BranchesView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -55,6 +59,10 @@ const router = createRouter({
     { path: '/settings/locations', component: PreferredLocationsView },
     { path: '/settings/developers', component: RealEstateDevelopersView },
     { path: '/settings/company', component: CompanyProfileView },
+    { path: '/settings/whatsapp', component: WhatsAppSettingsView },
+    { path: '/finance', component: FinanceView },
+    { path: '/invoices/:id', component: InvoiceDetailView },
+    { path: '/settings/branches', component: BranchesView },
     { path: '/team', component: TeamView },
     { path: '/:section', component: ComingSoonView },
   ],
