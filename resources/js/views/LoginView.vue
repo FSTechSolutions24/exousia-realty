@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight, CheckCircle2, Eye, EyeOff } from '@lucide/vue'
 import { useAuthStore } from '../stores/auth'
 const auth = useAuthStore(); const router = useRouter(); const route = useRoute(); const email = ref('owner@demo.exousia.test'); const password = ref('password'); const visible = ref(false); const loading = ref(false); const error = ref('')
-async function submit() { loading.value=true; error.value=''; try { await auth.login(email.value,password.value); router.replace('/') } catch(e:any) { if(e.response?.data?.verification_required){router.replace({path:'/verify-email',query:{email:e.response.data.email}});return} error.value=e.response?.data?.message || 'Unable to sign in.' } finally { loading.value=false } }
+async function submit() { loading.value=true; error.value=''; try { await auth.login(email.value,password.value); router.replace(auth.platformAdmin ? '/platform' : '/dashboard') } catch(e:any) { if(e.response?.data?.verification_required){router.replace({path:'/verify-email',query:{email:e.response.data.email}});return} error.value=e.response?.data?.message || 'Unable to sign in.' } finally { loading.value=false } }
 </script>
 <template>
   <main class="auth-layout">

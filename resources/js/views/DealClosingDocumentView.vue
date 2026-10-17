@@ -29,6 +29,7 @@ onMounted(async () => {
     <div v-if="loading" class="panel deal-closing-loading">Preparing the deal closing statement…</div>
     <div v-else-if="error" class="detail-alert">{{ error }}</div>
     <article v-else-if="deal" class="deal-closing-sheet">
+      <img v-if="auth.bootstrap?.company.logo_url" class="deal-closing-company-logo" :src="auth.bootstrap.company.logo_url" :alt="`${auth.bootstrap.company.name} logo`">
       <header class="deal-closing-brand"><span class="deal-closing-mark">E</span><div><strong>EXOUSIA REALTY</strong><small>{{ auth.bootstrap?.company.name }} · DEAL CLOSING DOCUMENT</small></div><span class="deal-closing-number">DEAL #{{ String(deal.id).padStart(6, '0') }}</span></header>
       <section class="deal-closing-title"><div><span class="eyebrow">SALE AGREEMENT & PAYMENT SCHEDULE</span><h1>Property transaction closing statement</h1><p>Transaction particulars and payment schedule for review and signature by the parties.</p></div><span class="deal-status" :class="deal.status">{{ deal.status.replace(/_/g, ' ') }}</span></section>
       <section class="deal-closing-parties"><div><small>Buyer / customer</small><strong>{{ deal.lead.name }}</strong><span>{{ deal.lead.phone }}</span></div><div><small>Brokerage / seller representative</small><strong>{{ auth.bootstrap?.company.name }}</strong><span>{{ deal.salesperson_name || 'Workspace representative' }}</span></div><div><small>Document date</small><strong>{{ date(new Date().toISOString().slice(0, 10)) }}</strong></div></section>

@@ -55,6 +55,11 @@ class User extends Authenticatable implements MustVerifyEmail
             ->withTimestamps();
     }
 
+    public function memberships()
+    {
+        return $this->hasMany(CompanyMembership::class);
+    }
+
     public function currentCompany()
     {
         return $this->belongsTo(Company::class, 'current_company_id');

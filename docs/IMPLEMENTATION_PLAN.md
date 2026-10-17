@@ -1,17 +1,20 @@
 ﻿# Exousia Realty implementation plan
 
-Updated: 2026-10-09
+Updated: 2026-10-17
 
 ## Current status
 
 | Milestone | Status | Verified scope |
 | --- | --- | --- |
 | Phase 0 Ã¢â‚¬â€ foundation | In progress | Laravel 12/Sanctum session auth, password reset and email verification, company memberships and workspace administration with email invitations/acceptance, tenant resolver, roles, audit log, Vue 3/TS/Vite UI shell, EN/AR direction, Docker/CI/docs |
-| Phase 1 â€” lead CRM | In progress | Lead CRUD API (create/read/update/list), reversible lead archive/restore with tenant scope, role permission, timeline and audit history, scoped search/filter, Egyptian phone normalization, duplicate warning, tasks, activity timeline, real dashboard metrics, period-based lead/deal reports with prior-period comparisons and scoped CSV export, demo seed data |
-| Phase 2 Ã¢â‚¬â€ inventory/matching | In progress | Tenant-scoped property listings, precise EGP piastre prices, private photos, role permissions, CRUD/search/filter UI, activity/audit history, fictional demo data, and tenant/permission/media tests; deterministic tenant-scoped lead-to-listing recommendations are implemented and covered by tenant/permission tests |
+| Phase 1 â€” lead CRM | In progress | Lead CRUD API (create/read/update/list), reversible lead archive/restore with tenant scope, role permission, timeline and audit history, scoped search/filter, Egyptian phone normalization, duplicate warning, tenant-scoped task buckets for overdue/today/upcoming follow-ups with counts and visible priority, activity timeline, real dashboard metrics, period-based lead/deal reports with prior-period comparisons and scoped CSV export, demo seed data |
+| Phase 2 Ã¢â‚¬â€ inventory/matching | In progress | Tenant-scoped property listings, precise EGP piastre prices, private photos, role permissions, CRUD/search/filter UI, activity/audit history, fictional demo data, and tenant/permission/media tests; deterministic tenant-scoped lead-to-listing recommendations and an audited property viewing feedback loop with buyer ratings and listing snapshots are implemented |
 | Phase 3 â€” sales/commissions | In progress | Tenant-scoped deals link leads to optional listings and track negotiation status, agreed EGP value, payment method, amounts received, outstanding balance, payment reference/date/terms, activity history, and audit events; management can close a deal only after attaching a signed contract PDF and recording payment details. A printable closing statement includes the transaction and payment schedule. Commission ledger supports fixed or percentage amounts per deal/unit, employee self-visibility, management reports, and an audited pending → approved → paid workflow. Management prints employee payment orders and uploads private signed PDF copies before recording payment. Private deal documents are also implemented |
-| Phase 4 â€” SaaS commercialization | Not started | No subscription enforcement or billing is claimed |
-| Phase 5 â€” integrations/hardening | Not started | No Meta, WhatsApp API, Paymob, or live external integration is claimed |
+| Phase 4 â€” SaaS commercialization | In progress | Monthly/yearly EGP plan catalog, one-time 14-day free trial, company subscription history, tenant workspace access gate, team seat limits, owner/admin billing controls, payment history, and Paymob hosted checkout with verified callbacks are implemented. Platform-owner-only Paymob setup stores credentials encrypted; live gateway verification remains outstanding |
+| Phase 5 â€” integrations/hardening | In progress | Paymob API and callback integration is implemented; production credentials and end-to-end provider verification are outstanding. Meta and WhatsApp integrations remain planned |
+| Phase 6 â€” platform operations | In progress | Separate platform-owner console, cross-company operational and subscription reporting, company search/filters, Paymob payment ledger and encrypted gateway setup, suspension/reactivation, manual subscription grants, and platform action audit history are implemented. Browser-level review and production admin provisioning remain outstanding |
+
+Additional workspace capabilities: a tenant-scoped real estate developer directory supports search, contact details, activation, and inventory links; company owners/admins can upload a private company logo used in the workspace sidebar and printed deal statements.
 
 ## Architecture
 
@@ -28,7 +31,7 @@ flowchart LR
   API -. local or private .-> Files[(S3/Wasabi adapter)]
 ```
 
-The application is a modular monolith. `ResolveTenant` selects only a company for which the user has an active membership; controllers then scope reads, writes, relationship validation, metrics, and duplicate checks to that company. Platform administration will use separate middleware and routes instead of bypassing tenant scope.
+The application is a modular monolith. `ResolveTenant` selects only a company for which the user has an active membership; controllers then scope reads, writes, relationship validation, metrics, and duplicate checks to that company. Cross-company platform reporting and controls use separate routes behind the `is_platform_admin` authorization middleware, with all company-changing actions recorded in the platform audit log.
 
 ## Completed decisions
 
@@ -54,6 +57,9 @@ The application is a modular monolith. `ResolveTenant` selects only a company fo
 3. Add a PHP formatter and static analysis after the Laravel 12 compatibility pass.
 4. Add Playwright tests when the browser runtime is available.
 5. Commission/deal follow-ups: add payment-provider/bank reconciliation and optional payment receipt attachments; recorded deal payment details and signed PDFs are workspace records, not bank-verified transactions.
+6. Public landing pages: the primary marketing page is at `/`; it now includes a responsive, animated 3D property matching section with illustrative fictional inventory and a buyer search. Comparison designs are available at `/home2` and `/home3`. The third design foregrounds brokerage listings, client matching, and team workflow through fictional illustrated property inventory. All link to registration/sign-in. The authenticated dashboard is available at `/dashboard`.
+7. SaaS billing: configure Paymob secret/public/HMAC keys and payment integration IDs in the server environment, then complete sandbox callbacks and a small live payment/refund verification before accepting production subscriptions. Confirm local plan prices and team seat limits against the launch offer.
+8. Platform administration: verify the responsive owner console in a browser, then create its dedicated account with `php artisan platform-admin:create "Platform Owner" owner@example.com`. Keep this privileged account separate from ordinary company-admin membership and provision it through secure operations access.
 
 
 
@@ -66,6 +72,9 @@ The application is a modular monolith. `ResolveTenant` selects only a company fo
 
 
 ## Verification log â€” 2026-10-09
+
+- Developer partner directory and company branding (2026-10-17): searchable, paginated tenant-owned developers with contact management and activation; inventory can link only to an active developer in its workspace and can be searched by developer. Owners/admins upload and remove private logos; active workspace members can view them in the sidebar and printed deal documents. Developer and branding test coverage is included in the current suite.
+- Paymob platform-owner setup (2026-10-17): gateway setup is available only in the super-admin console. Secrets are encrypted at rest and returned only to the protected, private no-store platform-owner setup endpoint to prefill its form; company billing exposes checkout only. Both Unified Checkout and the classic iframe flow are supported, including the photo-rent `.env` key names. Company checkout uses the saved account phone when available and no longer asks for a separate number. Platform access, encrypted storage, and both checkout paths are covered by tests. Current suite: 78 tests and 548 assertions; typecheck and production build pass. The existing CKEditor chunk-size warning remains.
 
 - Reversible lead archive/restore: 22 PHP tests and 63 assertions passed, including role denial and cross-company restore isolation; TypeScript checks passed.
 - Workspace team page and membership administration: owners/admins can add existing accounts, update roles, and deactivate/reactivate members; other roles can view the roster. Last active owner protection, tenant isolation, and audit history were tested.
@@ -92,6 +101,8 @@ npm.cmd run build pass. CSV, permission boundaries, matching filters, commission
 - Lead CSV import: downloadable template, preview with row validation and duplicate warnings, tenant-scoped all-or-nothing creation, and exact-file idempotency added. Import tests cover permissions, invalid batches, duplicate contacts, and company isolation. `php artisan test`: 53 tests and 288 assertions pass; `npm.cmd run build` passes.
 - Sales performance reporting: won deals snapshot the assigned lead owner and close time; existing won deals are backfilled where a tenant membership can be resolved. Reports now show workspace employee leaders by units and recorded agreed value, export the same rows to CSV, and restrict agent reports to their own sales. Values are explicitly labeled as agreed deal values, not collected cash. Tests cover sorting, missing prices, close attribution, and tenant/member scope.
 - Sales performance verification: `php artisan test` passes with 54 tests and 303 assertions; `npm.cmd run typecheck` and `npm.cmd run build` pass. The build retains the existing CKEditor chunk size warning.
+- Follow-up task triage: Tasks now have tenant-scoped Overdue, Due today, Upcoming, and All open views with matching counts; agents only see counts and tasks assigned to themselves. Priority is visible in the task list. `php artisan test`: 68 tests and 459 assertions pass; `npm.cmd run typecheck` and the Vite production build pass. The build retains the existing CKEditor chunk size warning.
+- Property viewing feedback loop: agents can schedule an available matched property against a lead, then record completed, cancelled, or no-show outcomes, a 1–5 buyer-interest rating, and feedback notes. Listing title, reference, location, and EGP price are snapshotted so history stays useful after inventory edits. Scheduling and outcomes appear in the lead timeline and audit log; tenant and permission boundaries are feature-tested. `php artisan test`: 71 tests and 479 assertions pass; `npm.cmd run typecheck` and the Vite production build pass. The CKEditor chunk-size warning remains.
 - Bulk lead actions: current-page multi-select supports tenant-scoped assignment and reversible archive with per-lead history/audit events. Tests cover authorization and foreign-company IDs.
 - Bulk lead action verification: `php artisan test` passes with 56 tests and 318 assertions; `npm.cmd run typecheck` and `npm.cmd run build` pass. The CKEditor bundle size warning remains.
 - Commission calculation and reporting: commission entries now snapshot the linked property unit and the agreed-value base, calculate percentage amounts in integer EGP piastres or accept fixed amounts, and retain rate/base details for audit. Employees see only their own entries and report totals; management roles see workspace totals and employee breakdowns. Percentage calculation requires a linked unit, contracted or won status, and agreed sale value.

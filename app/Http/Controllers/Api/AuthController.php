@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\PipelineStage;
+use App\Models\SubscriptionPlan;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -59,6 +60,13 @@ class AuthController extends Controller
                 'role' => 'owner',
                 'status' => 'active',
                 'joined_at' => now(),
+            ]);
+            $trialPlan = SubscriptionPlan::where('slug', 'free-trial')->firstOrFail();
+            $startsAt = now();
+            $company->subscriptions()->create([
+                'plan_id' => $trialPlan->id, 'started_by' => $user->id, 'status' => 'trialing', 'billing_cycle' => 'trial',
+                'is_free_trial' => true, 'starts_at' => $startsAt, 'ends_at' => $startsAt->copy()->addDays(14),
+                'trial_started_at' => $startsAt, 'trial_ends_at' => $startsAt->copy()->addDays(14),
             ]);
             $this->createDefaultStages($company);
             return $user;

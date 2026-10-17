@@ -5,9 +5,11 @@ import type { Bootstrap } from '../types'
 
 export const useAuthStore = defineStore('auth', () => {
   const bootstrap = ref<Bootstrap | null>(null)
+  const platformAdmin = ref(false)
+  const platformUser = ref<{ id: number; name: string; email: string } | null>(null)
   const loading = ref(true)
   const locale = ref<'en' | 'ar'>((localStorage.getItem('exousia_locale') as 'en' | 'ar') || 'en')
-  const authenticated = computed(() => Boolean(bootstrap.value?.user))
+  const authenticated = computed(() => Boolean(bootstrap.value?.user || platformUser.value))
 
   function applyDirection() {
     document.documentElement.lang = locale.value
@@ -23,8 +25,17 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const { data } = await api.get<Bootstrap>('/bootstrap')
       bootstrap.value = data
+      platformAdmin.value = Boolean(data.is_platform_admin)
+      platformUser.value = data.is_platform_admin ? data.user : null
       localStorage.setItem('exousia_company_id', String(data.company.id))
-    } catch { bootstrap.value = null }
+    } catch {
+      bootstrap.value = null
+      try {
+        const { data } = await api.get('/platform/bootstrap')
+        platformAdmin.value = true
+        platformUser.value = data.user
+      } catch { platformAdmin.value = false; platformUser.value = null }
+    }
     finally { loading.value = false; applyDirection() }
   }
   async function login(email: string, password: string) {
@@ -34,10 +45,10 @@ export const useAuthStore = defineStore('auth', () => {
     await prepareCsrf(); return api.post('/auth/register', payload)
   }
   async function logout() {
-    await api.post('/auth/logout'); bootstrap.value = null; localStorage.removeItem('exousia_company_id')
+    await api.post('/auth/logout'); bootstrap.value = null; platformAdmin.value = false; platformUser.value = null; localStorage.removeItem('exousia_company_id')
   }
   async function switchCompany(id: number) {
     await api.post(`/companies/${id}/switch`); localStorage.setItem('exousia_company_id', String(id)); await load()
   }
-  return { bootstrap, loading, locale, authenticated, load, login, register, logout, switchCompany, toggleLocale }
+  return { bootstrap, platformAdmin, platformUser, loading, locale, authenticated, load, login, register, logout, switchCompany, toggleLocale }
 })

@@ -98,9 +98,24 @@ class TeamApiTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_team_member_limit_from_active_plan_is_enforced(): void
+    {
+        [$company, $owner] = $this->workspace();
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id);
+        foreach (['seat-one@example.test', 'seat-two@example.test'] as $email) {
+            $this->postJson('/api/v1/team/members', ['name' => 'Seat User', 'email' => $email, 'role' => 'agent'])->assertCreated();
+        }
+
+        $this->postJson('/api/v1/team/members', ['name' => 'Over Limit', 'email' => 'seat-three@example.test', 'role' => 'agent'])
+            ->assertUnprocessable()->assertJsonValidationErrors('plan');
+        $this->assertDatabaseCount('company_memberships', 1);
+        $this->assertDatabaseCount('company_invitations', 2);
+    }
+
     private function workspace(): array
     {
         $company = Company::create(['name' => 'Test Realty', 'slug' => 'test-realty']);
+        $this->enableCompanyTrial($company);
         $owner = User::factory()->create(['current_company_id' => $company->id]);
         $company->memberships()->create(['user_id' => $owner->id, 'role' => 'owner', 'status' => 'active']);
         return [$company, $owner];

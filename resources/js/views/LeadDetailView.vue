@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { AlertCircle, ArrowLeft, Building2, CalendarPlus, Mail, MapPin, MessageCircle, Phone, Plus, RefreshCw, UserRound } from '@lucide/vue'
+import { AlertCircle, ArrowLeft, Building2, CalendarPlus, CalendarDays, Mail, MapPin, MessageCircle, Phone, Plus, RefreshCw, UserRound, Star } from '@lucide/vue'
 import { api } from '../api'
 import { useAuthStore } from '../stores/auth'
 import StatusBadge from '../components/StatusBadge.vue'
+import Modal from '../components/Modal.vue'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -16,9 +17,18 @@ const matches = ref<any[]>([])
 const matchesLoading = ref(false)
 const matchesError = ref('')
 const activity = reactive({ type: 'note', title: '', description: '' })
+const showViewingModal = ref(false)
+const viewingSaving = ref(false)
+const viewingError = ref('')
+const selectedViewing = ref<any>(null)
+const outcomeSaving = ref(false)
+const outcomeError = ref('')
+const viewingForm = reactive({ property_listing_id: '', scheduled_at: '' })
+const outcomeForm = reactive({ status: 'completed', buyer_rating: '5', buyer_feedback: '' })
 
 const initials = computed(() => String(lead.value?.name || '?').split(/\s+/).filter(Boolean).map((part: string) => part.charAt(0)).join('').slice(0, 2).toUpperCase())
 const activities = computed(() => Array.isArray(lead.value?.activities) ? lead.value.activities : [])
+const viewings = computed(() => Array.isArray(lead.value?.viewings) ? lead.value.viewings : [])
 const stageLabel = computed(() => lead.value?.stage?.name || 'Stage unavailable')
 const stageColor = computed(() => lead.value?.stage?.color || '#64748b')
 const assigneeName = computed(() => lead.value?.assignee?.name || 'Unassigned')
@@ -81,6 +91,55 @@ async function addActivity() {
   }
 }
 
+function openViewing(listingId?: number) {
+  viewingError.value = ''
+  viewingForm.property_listing_id = listingId ? String(listingId) : ''
+  viewingForm.scheduled_at = ''
+  showViewingModal.value = true
+}
+
+async function scheduleViewing() {
+  if (!lead.value) return
+  viewingSaving.value = true
+  viewingError.value = ''
+  try {
+    await api.post(`/leads/${lead.value.id}/viewings`, viewingForm)
+    showViewingModal.value = false
+    await load()
+  } catch (exception: any) {
+    viewingError.value = Object.values(exception.response?.data?.errors || { error: [exception.response?.data?.message || 'The viewing could not be scheduled.'] }).flat().join(' ')
+  } finally {
+    viewingSaving.value = false
+  }
+}
+
+function openViewingOutcome(viewing: any) {
+  selectedViewing.value = viewing
+  outcomeForm.status = 'completed'
+  outcomeForm.buyer_rating = '5'
+  outcomeForm.buyer_feedback = ''
+  outcomeError.value = ''
+}
+
+async function recordViewingOutcome() {
+  if (!lead.value || !selectedViewing.value) return
+  outcomeSaving.value = true
+  outcomeError.value = ''
+  try {
+    await api.patch(`/leads/${lead.value.id}/viewings/${selectedViewing.value.id}`, {
+      status: outcomeForm.status,
+      buyer_rating: outcomeForm.status === 'completed' ? Number(outcomeForm.buyer_rating) : null,
+      buyer_feedback: outcomeForm.buyer_feedback,
+    })
+    selectedViewing.value = null
+    await load()
+  } catch (exception: any) {
+    outcomeError.value = Object.values(exception.response?.data?.errors || { error: [exception.response?.data?.message || 'The viewing result could not be saved.'] }).flat().join(' ')
+  } finally {
+    outcomeSaving.value = false
+  }
+}
+
 async function changeStage() {
   if (!lead.value) return
   const previousStage = lead.value.stage?.id
@@ -123,15 +182,27 @@ watch(() => route.params.id, load, { immediate: true })
     <header class="lead-hero">
       <div class="lead-avatar large">{{ initials }}</div>
       <div class="lead-title"><span class="eyebrow">LEAD #{{ lead.id }}</span><h1>{{ lead.name || 'Unnamed lead' }}</h1><div><a v-if="lead.phone_normalized" :href="`tel:${lead.phone_normalized}`"><Phone />{{ lead.phone_original || lead.phone_normalized }}</a><a v-if="lead.email" :href="`mailto:${lead.email}`"><Mail />{{ lead.email }}</a></div></div>
-      <div class="lead-hero-actions"><a v-if="whatsappUrl" class="button secondary" :href="whatsappUrl" target="_blank" rel="noopener"><MessageCircle />WhatsApp</a><button class="button primary"><CalendarPlus />Schedule follow-up</button></div>
+      <div class="lead-hero-actions"><a v-if="whatsappUrl" class="button secondary" :href="whatsappUrl" target="_blank" rel="noopener"><MessageCircle />WhatsApp</a><button class="button primary" @click="openViewing()"><CalendarPlus />Schedule a viewing</button></div>
     </header>
     <div class="detail-grid">
-      <section class="detail-main"><article class="panel">
+      <section class="detail-main">
+        <article class="panel viewings-panel">
+          <header class="section-header"><div><span class="eyebrow">PROPERTY TOURS</span><h2>Viewing history</h2></div><button class="button secondary compact-button" @click="openViewing()"><CalendarPlus :size="15" />Schedule</button></header>
+          <div v-if="viewings.length" class="viewing-list"><article v-for="viewing in viewings" :key="viewing.id" class="viewing-row">
+            <span class="viewing-calendar"><CalendarDays :size="18" /></span>
+            <div class="viewing-details"><strong>{{ viewing.listing_title || 'Property listing' }}</strong><small>{{ viewing.listing_location }} · {{ viewing.listing_reference_code }} · {{ formatEgp(viewing.listing_price_minor_units / 100) }} · {{ formatDate(viewing.scheduled_at) }}</small><span v-if="viewing.buyer_feedback" class="viewing-feedback">“{{ viewing.buyer_feedback }}”</span></div>
+            <span class="viewing-status" :class="`viewing-${viewing.status}`">{{ viewing.status.replace('_', ' ') }}<span v-if="viewing.buyer_rating" class="viewing-rating"><Star :size="12" />{{ viewing.buyer_rating }}/5</span></span>
+            <button v-if="viewing.status === 'scheduled'" class="button secondary compact-button" @click="openViewingOutcome(viewing)">Record result</button>
+          </article></div>
+          <div v-else class="viewing-empty"><CalendarDays :size="19" /><span>No viewings yet. Schedule a property tour to keep the buyer’s search moving.</span></div>
+        </article>
+        <article class="panel">
         <header class="section-header"><div><span class="eyebrow">JOURNEY</span><h2>Activity timeline</h2></div></header>
         <form class="activity-composer" @submit.prevent="addActivity"><select v-model="activity.type"><option value="note">Note</option><option value="call">Call</option><option value="whatsapp">WhatsApp</option><option value="email">Email</option><option value="meeting">Meeting</option></select><input v-model="activity.title" required placeholder="What happened?"><textarea v-model="activity.description" placeholder="Add useful context for the team…"></textarea><button class="button primary" :disabled="saving"><Plus />{{ saving ? 'Saving…' : 'Add activity' }}</button></form>
         <div v-if="activities.length" class="timeline"><div v-for="item in activities" :key="item.id" class="timeline-item"><span class="timeline-icon"><MessageCircle v-if="item.type === 'whatsapp'" /><Phone v-else-if="item.type === 'call'" /><UserRound v-else /></span><div><header><strong>{{ item.title || 'Activity' }}</strong><time>{{ formatDate(item.occurred_at) }}</time></header><p v-if="item.description">{{ item.description }}</p><small>{{ item.user?.name || 'System' }} · {{ item.type }}</small></div></div></div>
         <div v-else class="empty-mini"><MessageCircle /><strong>No activity yet</strong><span>Add the first note or communication log.</span></div>
-      </article></section>
+      </article>
+      </section>
       <aside class="detail-aside">
         <article class="panel detail-card"><span class="eyebrow">STATUS</span><select v-model="lead.pipeline_stage_id" @change="changeStage"><option v-for="pipelineStage in auth.bootstrap?.stages || []" :key="pipelineStage.id" :value="pipelineStage.id">{{ pipelineStage.name }}</option></select><StatusBadge :label="stageLabel" :color="stageColor" /></article>
         <article class="panel detail-card"><span class="eyebrow">REQUIREMENTS</span><dl><div><dt><Building2 />Property</dt><dd>{{ lead.property_type || 'Any type' }}</dd></div><div><dt><MapPin />Locations</dt><dd v-if="lead.preferred_locations?.length" class="detail-location-tags"><span v-for="location in lead.preferred_locations" :key="location"><MapPin />{{ location }}</span></dd><dd v-else>Flexible</dd></div><div><dt>Budget</dt><dd>{{ formatMoney(lead.budget_max) }}</dd></div><div><dt>Intent</dt><dd class="capitalize">{{ lead.intent || 'Not set' }}</dd></div></dl></article>
@@ -139,5 +210,23 @@ watch(() => route.params.id, load, { immediate: true })
         <article class="panel detail-card"><span class="eyebrow">OWNERSHIP</span><div class="assignee"><span class="user-avatar">{{ assigneeInitial }}</span><div><strong>{{ assigneeName }}</strong><small>Responsible agent</small></div></div><div class="source-line"><span><strong>Lead source</strong><small>Reported in Lead sources</small></span><b class="lead-source-badge">{{ sourceLabel }}</b></div></article>
       </aside>
     </div>
+    <Modal v-if="showViewingModal" title="Schedule a property viewing" description="Turn a suitable match into a real conversation with the buyer." @close="showViewingModal = false">
+      <form class="form-grid" @submit.prevent="scheduleViewing">
+        <label class="full">Matched property<select v-model="viewingForm.property_listing_id" required><option value="" disabled>Select an available match</option><option v-for="match in matches" :key="match.listing.id" :value="String(match.listing.id)">{{ match.listing.title }} · {{ match.listing.location }} · {{ formatEgp(match.listing.price_egp) }}</option></select></label>
+        <p v-if="!matches.length" class="viewing-modal-note full">There are no available matches yet. Refresh property matches after updating the buyer’s requirements.</p>
+        <label class="full">Viewing date and time<input v-model="viewingForm.scheduled_at" type="datetime-local" required></label>
+        <div v-if="viewingError" class="form-error full">{{ viewingError }}</div>
+        <div class="form-actions full"><button type="button" class="button secondary" @click="showViewingModal = false">Cancel</button><button class="button primary" :disabled="viewingSaving || !matches.length">{{ viewingSaving ? 'Scheduling…' : 'Schedule viewing' }}</button></div>
+      </form>
+    </Modal>
+    <Modal v-if="selectedViewing" title="Record buyer feedback" :description="selectedViewing.listing_title || 'Property viewing'" @close="selectedViewing = null">
+      <form class="form-grid" @submit.prevent="recordViewingOutcome">
+        <label class="full">Viewing result<select v-model="outcomeForm.status"><option value="completed">Completed</option><option value="no_show">Buyer did not attend</option><option value="cancelled">Cancelled</option></select></label>
+        <label v-if="outcomeForm.status === 'completed'" class="full">Buyer interest<select v-model="outcomeForm.buyer_rating"><option value="5">5 — Loved it</option><option value="4">4 — Strong interest</option><option value="3">3 — Maybe</option><option value="2">2 — Not quite</option><option value="1">1 — Not a fit</option></select></label>
+        <label class="full">What did the buyer say?<textarea v-model="outcomeForm.buyer_feedback" rows="3" maxlength="3000" placeholder="What worked, what didn’t, and what should we look for next?"></textarea></label>
+        <div v-if="outcomeError" class="form-error full">{{ outcomeError }}</div>
+        <div class="form-actions full"><button type="button" class="button secondary" @click="selectedViewing = null">Cancel</button><button class="button primary" :disabled="outcomeSaving">{{ outcomeSaving ? 'Saving…' : 'Save viewing result' }}</button></div>
+      </form>
+    </Modal>
   </div>
 </template>

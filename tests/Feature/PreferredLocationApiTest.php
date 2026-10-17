@@ -59,6 +59,7 @@ class PreferredLocationApiTest extends TestCase
     private function workspace(string $role): array
     {
         $company = Company::create(['name' => ucfirst($role).' Realty', 'slug' => $role.'-realty']);
+        $this->enableCompanyTrial($company);
         $user = User::factory()->create(['current_company_id' => $company->id]);
         $company->memberships()->create(['user_id' => $user->id, 'role' => $role, 'status' => 'active']);
 

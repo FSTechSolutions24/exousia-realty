@@ -161,6 +161,7 @@ class LeadApiTest extends TestCase
         $csv = UploadedFile::fake()->createWithContent('same.csv', "name,phone\nTenant Lead,01055551234\n");
         $this->postJson('/api/v1/leads/import', ['file' => $csv])->assertCreated();
         $otherCompany = Company::create(['name' => 'Other Import Realty', 'slug' => 'other-import-'.uniqid()]);
+        $this->enableCompanyTrial($otherCompany);
         $otherOwner = User::factory()->create(['current_company_id' => $otherCompany->id]);
         $otherCompany->memberships()->create(['user_id' => $otherOwner->id, 'role' => 'owner', 'status' => 'active']);
         PipelineStage::create(['company_id' => $otherCompany->id, 'name' => 'New lead', 'position' => 0]);
@@ -304,6 +305,7 @@ class LeadApiTest extends TestCase
     private function workspace(): array
     {
         $company = Company::create(['name' => 'Test Realty', 'slug' => 'test-realty']);
+        $this->enableCompanyTrial($company);
         $user = User::factory()->create(['current_company_id' => $company->id]);
         $company->memberships()->create(['user_id' => $user->id, 'role' => 'owner', 'status' => 'active']);
         $stage = PipelineStage::create(['company_id' => $company->id, 'name' => 'New lead', 'position' => 0]);

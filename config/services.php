@@ -30,4 +30,14 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'paymob' => [
+        'api_base' => env('PAYMOB_API_BASE', 'https://accept.paymob.com'),
+        'checkout_base' => env('PAYMOB_CHECKOUT_BASE', 'https://accept.paymob.com/unifiedcheckout'),
+        'secret_key' => env('PAYMOB_SECRET_KEY', env('PAYMOB_API_KEY')),
+        'public_key' => env('PAYMOB_PUBLIC_KEY'),
+        'hmac_secret' => env('PAYMOB_HMAC_SECRET', env('PAYMOB_HMAC')),
+        'iframe_id' => env('PAYMOB_IFRAME_ID'),
+        'payment_methods' => array_values(array_filter(array_map('intval', explode(',', (string) env('PAYMOB_PAYMENT_METHODS', env('PAYMOB_INTEGRATION_ID', '')))))),
+    ],
+
 ];

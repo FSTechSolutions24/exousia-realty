@@ -12,6 +12,12 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+api.interceptors.response.use((response) => response, (error) => {
+  if (error.response?.status === 402 && window.location.pathname !== '/billing') window.location.assign('/billing')
+  if (error.response?.status === 403 && error.response?.data?.code === 'company_suspended' && window.location.pathname !== '/billing') window.location.assign('/billing')
+  return Promise.reject(error)
+})
+
 export async function prepareCsrf() {
   await axios.get('/sanctum/csrf-cookie', { withCredentials: true })
 }

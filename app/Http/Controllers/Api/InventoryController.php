@@ -23,14 +23,15 @@ class InventoryController extends Controller
     public function index(Request $request, TenantContext $tenant)
     {
         $this->authorizeView($request);
-        $query = PropertyListing::where('company_id', $tenant->id())->with(['photos', 'preferredLocation']);
+        $query = PropertyListing::where('company_id', $tenant->id())->with(['photos', 'preferredLocation', 'developer:id,company_id,name,is_active']);
 
         if ($search = trim((string) $request->query('search'))) {
-            $query->where(function ($builder) use ($search) {
+            $query->where(function ($builder) use ($search, $tenant) {
                 $builder->where('title', 'like', "%{$search}%")
                     ->orWhere('reference_code', 'like', "%{$search}%")
                     ->orWhere('location', 'like', "%{$search}%")
-                    ->orWhereHas('preferredLocation', fn ($locations) => $locations->where('name', 'like', "%{$search}%"));
+                    ->orWhereHas('preferredLocation', fn ($locations) => $locations->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('developer', fn ($developers) => $developers->where('company_id', $tenant->id())->where('name', 'like', "%{$search}%"));
             });
         }
         foreach (['status', 'listing_type', 'property_type'] as $filter) {
@@ -56,7 +57,7 @@ class InventoryController extends Controller
     public function show(Request $request, TenantContext $tenant, int $listing)
     {
         $this->authorizeView($request);
-        $listing = $this->findListing($tenant, $listing)->load(['photos', 'activities.user:id,name']);
+        $listing = $this->findListing($tenant, $listing)->load(['photos', 'activities.user:id,name', 'developer:id,company_id,name,is_active']);
         return response()->json($this->serialize($listing, true));
     }
 
@@ -65,6 +66,7 @@ class InventoryController extends Controller
         $this->authorizeManage($request);
         $data = $this->validateListing($request, $tenant);
         $this->applyMasterLocation($data, $tenant);
+        $this->applyDeveloper($data, $tenant);
         $priceMinor = $this->toMinorUnits($data['price_egp']);
         unset($data['price_egp']);
         $data['reference_code'] = ($data['reference_code'] ?? null) ?: $this->generateReference($tenant);
@@ -73,10 +75,10 @@ class InventoryController extends Controller
             'company_id' => $tenant->id(), 'listed_by' => $request->user()->id,
             'price_minor_units' => $priceMinor, 'currency' => 'EGP',
         ]);
-        $this->recordActivity($request, $listing, 'created', [], $listing->only(['reference_code', 'title', 'listing_type', 'status', 'price_minor_units']));
-        $audit->log($request, 'inventory.listing_created', $listing, [], $listing->only(['reference_code', 'title', 'listing_type', 'status', 'price_minor_units']));
+        $this->recordActivity($request, $listing, 'created', [], $listing->only(['reference_code', 'title', 'listing_type', 'status', 'price_minor_units', 'developer_id']));
+        $audit->log($request, 'inventory.listing_created', $listing, [], $listing->only(['reference_code', 'title', 'listing_type', 'status', 'price_minor_units', 'developer_id']));
 
-        return response()->json($this->serialize($listing->load('photos')), 201);
+        return response()->json($this->serialize($listing->load(['photos', 'developer'])), 201);
     }
 
     public function update(Request $request, TenantContext $tenant, int $listing, AuditLogger $audit)
@@ -85,6 +87,7 @@ class InventoryController extends Controller
         $listing = $this->findListing($tenant, $listing);
         $data = $this->validateListing($request, $tenant, $listing, true);
         $this->applyMasterLocation($data, $tenant, $listing);
+        $this->applyDeveloper($data, $tenant, $listing);
         if (array_key_exists('price_egp', $data)) {
             $data['price_minor_units'] = $this->toMinorUnits($data['price_egp']);
             unset($data['price_egp']);
@@ -100,7 +103,7 @@ class InventoryController extends Controller
             $audit->log($request, 'inventory.listing_updated', $listing, $oldValues, $changes);
         }
 
-        return response()->json($this->serialize($listing->fresh()->load('photos')));
+        return response()->json($this->serialize($listing->fresh()->load(['photos', 'developer'])));
     }
 
     public function uploadPhoto(Request $request, TenantContext $tenant, int $listing, AuditLogger $audit)
@@ -168,6 +171,7 @@ class InventoryController extends Controller
             'property_type' => [$required, Rule::in(self::PROPERTY_TYPES)],
             'status' => ['sometimes', Rule::in(self::STATUSES)],
             'preferred_location_id' => [$required, 'integer', Rule::exists('preferred_locations', 'id')->where('company_id', $tenant->id())],
+            'developer_id' => ['nullable', 'integer', Rule::exists('real_estate_developers', 'id')->where('company_id', $tenant->id())],
             'address' => ['nullable', 'string', 'max:255'],
             'price_egp' => [$required, 'string', 'regex:/^\d{1,12}(?:\.\d{1,2})?$/'],
             'bedrooms' => ['nullable', 'integer', 'min:0', 'max:50'],
@@ -186,6 +190,15 @@ class InventoryController extends Controller
         }
 
         $data['location'] = $location->name;
+    }
+
+    private function applyDeveloper(array &$data, TenantContext $tenant, ?PropertyListing $listing = null): void
+    {
+        if (! array_key_exists('developer_id', $data) || $data['developer_id'] === null) return;
+        $developer = \App\Models\RealEstateDeveloper::where('company_id', $tenant->id())->findOrFail($data['developer_id']);
+        if (! $developer->is_active && (int) $developer->id !== (int) $listing?->developer_id) {
+            throw ValidationException::withMessages(['developer_id' => 'Select an active real estate developer.']);
+        }
     }
 
     private function toMinorUnits(string $amount): int
@@ -216,6 +229,8 @@ class InventoryController extends Controller
             'property_type' => $listing->property_type, 'status' => $listing->status,
             'location' => $listing->preferredLocation?->name ?? $listing->location,
             'preferred_location_id' => $listing->preferred_location_id,
+            'developer_id' => $listing->developer_id,
+            'developer' => $listing->developer ? ['id' => $listing->developer->id, 'name' => $listing->developer->name, 'is_active' => $listing->developer->is_active] : null,
             'address' => $listing->address, 'price_egp' => $this->fromMinorUnits($listing->price_minor_units),
             'price_minor_units' => $listing->price_minor_units, 'currency' => $listing->currency,
             'bedrooms' => $listing->bedrooms, 'bathrooms' => $listing->bathrooms, 'area_sqm' => $listing->area_sqm,

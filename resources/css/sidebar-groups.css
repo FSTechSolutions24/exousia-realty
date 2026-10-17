@@ -1,0 +1,11 @@
+.main-nav{min-height:0;overflow-y:auto;gap:7px;padding:0 2px 8px 0;scrollbar-width:thin;scrollbar-color:rgba(213,180,119,.28) transparent}
+.nav-group{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.055)}
+.nav-group-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border:0;border-radius:7px;background:transparent;color:#829996;text-align:left;font-size:11px;font-weight:800;letter-spacing:.1em;cursor:pointer;transition:background .18s,color .18s}
+.nav-group-toggle:hover,.nav-group-toggle[aria-expanded=true]{background:rgba(255,255,255,.045);color:#e1c58f}
+.nav-group-toggle svg{color:#708b88;transition:transform .18s}
+.nav-group-toggle svg.rotated{transform:rotate(180deg)}
+.nav-group-links{display:flex;flex-direction:column;gap:3px;padding:3px 0 5px;animation:nav-group-in .16s ease-out}
+.nav-group-links a{min-height:38px;padding-top:8px;padding-bottom:8px;font-size:11px}
+.nav-group-links a.active{background:rgba(213,180,119,.14)}
+@keyframes nav-group-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.nav-group-links{animation:none}.nav-group-toggle svg{transition:none}}

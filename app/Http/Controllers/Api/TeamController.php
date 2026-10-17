@@ -8,6 +8,7 @@ use App\Models\CompanyInvitation;
 use App\Models\CompanyMembership;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\SubscriptionService;
 use App\Support\TenantContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -63,6 +64,8 @@ class TeamController extends Controller
                 throw ValidationException::withMessages(['email' => 'This person is already an active member.']);
             }
 
+            $this->ensureTeamCapacity($tenant->id());
+
             if ($membership) {
                 $old = $membership->only(['role', 'status']);
                 $membership->update(['role' => $data['role'], 'status' => 'active', 'joined_at' => now()]);
@@ -91,6 +94,7 @@ class TeamController extends Controller
             $invitation = $existingInvitation->fresh();
             $event = 'team.invitation_resent';
         } else {
+            $this->ensureTeamCapacity($tenant->id());
             $invitation = CompanyInvitation::create([
                 'company_id' => $tenant->id(), 'invited_by' => $request->user()->id,
                 'name' => $data['name'], 'email' => $data['email'], 'role' => $data['role'],
@@ -148,6 +152,20 @@ class TeamController extends Controller
     private function authorizeManagement(Request $request): void
     {
         abort_unless($request->attributes->get('membership')->can('manage_members'), 403);
+    }
+
+    private function ensureTeamCapacity(int $companyId): void
+    {
+        $company = \App\Models\Company::findOrFail($companyId);
+        $limit = app(SubscriptionService::class)->current($company)?->plan?->team_member_limit;
+        if ($limit === null) return;
+
+        $activeMembers = CompanyMembership::where('company_id', $companyId)->where('status', 'active')->count();
+        $pendingInvitations = CompanyInvitation::where('company_id', $companyId)
+            ->whereNull('accepted_at')->whereNull('revoked_at')->where('expires_at', '>', now())->count();
+        if ($activeMembers + $pendingInvitations >= $limit) {
+            throw ValidationException::withMessages(['plan' => "Your current plan allows up to {$limit} team members. Upgrade your plan to add more."]);
+        }
     }
 
     private function serialize(CompanyMembership $membership): array

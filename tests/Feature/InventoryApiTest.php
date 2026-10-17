@@ -130,6 +130,7 @@ class InventoryApiTest extends TestCase
     private function workspace(string $role, string $name = 'Test Realty', string $slug = 'test-realty'): array
     {
         $company = Company::create(['name' => $name, 'slug' => $slug]);
+        $this->enableCompanyTrial($company);
         foreach (['Cairo', 'New Cairo'] as $position => $locationName) {
             PreferredLocation::create(['company_id' => $company->id, 'name' => $locationName, 'position' => $position]);
         }

@@ -10,11 +10,12 @@ const PropertyDescriptionEditor = defineAsyncComponent(() => import('../componen
 interface PropertyPhoto { id: number; original_name: string; mime_type: string; size_bytes: number; position: number; url: string }
 interface ListingActivity { id: number; event: string; old_values: Record<string, unknown> | null; new_values: Record<string, unknown> | null; occurred_at: string; user?: { id: number; name: string } }
 interface PropertyListing {
-  id: number; reference_code: string; title: string; description: string | null; listing_type: string; property_type: string;
+  id: number; reference_code: string; title: string; description: string | null; listing_type: string; property_type: string; developer_id: number | null; developer?: { id: number; name: string; is_active: boolean } | null;
   status: string; location: string; preferred_location_id: number | null; address: string | null; price_egp: string; price_minor_units: number; currency: string;
   bedrooms: number | null; bathrooms: number | null; area_sqm: string | null; photos: PropertyPhoto[]; activities?: ListingActivity[]
 }
 interface MasterLocation { id: number; name: string; name_ar: string | null; is_active: boolean }
+interface DeveloperOption { id: number; name: string; is_active: boolean }
 
 const auth = useAuthStore()
 const listings = ref<PropertyListing[]>([])
@@ -32,11 +33,12 @@ const selectedPhotos = ref<File[]>([])
 const currentPhotos = ref<PropertyPhoto[]>([])
 const history = ref<ListingActivity[]>([])
 const masterLocations = ref<MasterLocation[]>([])
+const developers = ref<DeveloperOption[]>([])
 const locationsLoading = ref(true)
 const canManage = computed(() => ['owner', 'admin', 'manager', 'operations'].includes(auth.bootstrap?.membership.role || '') || auth.bootstrap?.membership.permissions.includes('manage_inventory'))
 const form = reactive({
   reference_code: '', title: '', description: '', listing_type: 'sale', property_type: 'apartment', status: 'available',
-  location: '', preferred_location_id: '' as number | '', address: '', price_egp: '', bedrooms: '', bathrooms: '', area_sqm: '',
+  location: '', preferred_location_id: '' as number | '', developer_id: '' as number | '', address: '', price_egp: '', bedrooms: '', bathrooms: '', area_sqm: '',
 })
 let searchTimer: number | undefined
 
@@ -72,9 +74,16 @@ async function loadMasterLocations() {
   } finally { locationsLoading.value = false }
 }
 
+async function loadDevelopers() {
+  try {
+    const { data } = await api.get('/developers', { params: { active: 1, per_page: 100 } })
+    developers.value = data.data
+  } catch { developers.value = [] }
+}
+
 function openCreate() {
   editingId.value = null; selectedPhotos.value = []; currentPhotos.value = []; history.value = []
-  Object.assign(form, { reference_code: '', title: '', description: '', listing_type: 'sale', property_type: 'apartment', status: 'available', preferred_location_id: '', address: '', price_egp: '', bedrooms: '', bathrooms: '', area_sqm: '' })
+  Object.assign(form, { reference_code: '', title: '', description: '', listing_type: 'sale', property_type: 'apartment', status: 'available', preferred_location_id: '', developer_id: '', address: '', price_egp: '', bedrooms: '', bathrooms: '', area_sqm: '' })
   error.value = ''; showEditor.value = true
 }
 
@@ -87,6 +96,7 @@ async function openListing(listing: PropertyListing) {
       reference_code: data.reference_code, title: data.title, description: data.description || '', listing_type: data.listing_type,
       property_type: data.property_type, status: data.status,
       preferred_location_id: data.preferred_location_id || masterLocations.value.find(location => location.name === data.location)?.id || '',
+      developer_id: data.developer_id || '',
       address: data.address || '', price_egp: data.price_egp,
       bedrooms: data.bedrooms == null ? '' : String(data.bedrooms), bathrooms: data.bathrooms == null ? '' : String(data.bathrooms),
       area_sqm: data.area_sqm || '',
@@ -99,7 +109,7 @@ async function save() {
   saving.value = true; error.value = ''
   const payload = {
     ...form, reference_code: form.reference_code || null, description: form.description || null, address: form.address || null,
-    bedrooms: form.bedrooms || null, bathrooms: form.bathrooms || null, area_sqm: form.area_sqm || null,
+    developer_id: form.developer_id || null, bedrooms: form.bedrooms || null, bathrooms: form.bathrooms || null, area_sqm: form.area_sqm || null,
   }
   try {
     const { data: listing } = editingId.value
@@ -138,7 +148,7 @@ function removeSelectedPhoto(index: number) { selectedPhotos.value.splice(index,
 watch([listingType, status], () => { page.value = 1; load() })
 watch(search, () => { window.clearTimeout(searchTimer); page.value = 1; searchTimer = window.setTimeout(load, 250) })
 watch(page, load)
-onMounted(() => { load(); loadMasterLocations() })
+onMounted(() => { load(); loadMasterLocations(); loadDevelopers() })
 </script>
 
 <template>
@@ -151,7 +161,7 @@ onMounted(() => { load(); loadMasterLocations() })
       <div class="inventory-table-wrap"><table class="inventory-table"><thead><tr><th>Property</th><th>Location</th><th>Type</th><th>Price</th><th>Details</th><th>Status</th><th></th></tr></thead><tbody>
         <tr v-if="loading"><td colspan="7" class="inventory-empty">Loading inventory…</td></tr>
         <tr v-else-if="!listings.length"><td colspan="7"><div class="table-empty"><Building2 /><strong>No properties found</strong><span>{{ canManage ? 'Add a listing or change the filters.' : 'There are no listings in this workspace yet.' }}</span></div></td></tr>
-        <tr v-for="listing in listings" :key="listing.id" class="inventory-row" tabindex="0" @click="openListing(listing)" @keydown.enter="openListing(listing)"><td><span class="inventory-property"><img v-if="listing.photos.length" :src="listing.photos[0].url" :alt="listing.title"><span v-else class="inventory-photo-placeholder"><Building2 /></span><span><strong>{{ listing.title }}</strong><small>{{ listing.reference_code }} · {{ listing.listing_type }}</small></span></span></td><td>{{ listing.location }}</td><td>{{ listing.property_type.replace('_', ' ') }}</td><td><strong>{{ money(listing.price_egp) }}</strong></td><td><span class="inventory-details">{{ listing.bedrooms ?? '—' }} bd <i>·</i> {{ listing.area_sqm || '—' }} m²</span></td><td><span class="inventory-status" :class="listing.status">{{ listing.status }}</span></td><td><button v-if="canManage" class="icon-button" :aria-label="`Edit ${listing.title}`" @click.stop="openListing(listing)"><Pencil :size="16" /></button></td></tr>
+        <tr v-for="listing in listings" :key="listing.id" class="inventory-row" tabindex="0" @click="openListing(listing)" @keydown.enter="openListing(listing)"><td><span class="inventory-property"><img v-if="listing.photos.length" :src="listing.photos[0].url" :alt="listing.title"><span v-else class="inventory-photo-placeholder"><Building2 /></span><span><strong>{{ listing.title }}</strong><small class="inventory-developer">{{ listing.developer?.name || 'Independent' }}</small><small>{{ listing.reference_code }} · {{ listing.listing_type }}</small></span></span></td><td>{{ listing.location }}</td><td>{{ listing.property_type.replace('_', ' ') }}</td><td><strong>{{ money(listing.price_egp) }}</strong></td><td><span class="inventory-details">{{ listing.bedrooms ?? '—' }} bd <i>·</i> {{ listing.area_sqm || '—' }} m²</span></td><td><span class="inventory-status" :class="listing.status">{{ listing.status }}</span></td><td><button v-if="canManage" class="icon-button" :aria-label="`Edit ${listing.title}`" @click.stop="openListing(listing)"><Pencil :size="16" /></button></td></tr>
       </tbody></table></div>
       <footer class="table-footer"><span>{{ pagination.total || 0 }} properties</span><div><button class="icon-button" :disabled="page <= 1" @click="page--">‹</button><b>{{ page }}</b><button class="icon-button" :disabled="page >= (pagination.last_page || 1)" @click="page++">›</button></div></footer>
     </section>
@@ -164,6 +174,7 @@ onMounted(() => { load(); loadMasterLocations() })
         <label>Listing type<select v-model="form.listing_type" :disabled="!canManage"><option value="sale">For sale</option><option value="rent">For rent</option></select></label>
         <label>Property type<select v-model="form.property_type" :disabled="!canManage"><option v-for="item in propertyTypes" :key="item" :value="item">{{ item.replace('_', ' ') }}</option></select></label>
         <label>Location<select v-model="form.preferred_location_id" :disabled="!canManage || locationsLoading" required><option value="" disabled>{{ locationsLoading ? 'Loading locations…' : 'Select one location' }}</option><option v-for="location in masterLocations" :key="location.id" :value="location.id">{{ location.name }}{{ location.name_ar ? ` · ${location.name_ar}` : '' }}</option><option v-if="form.preferred_location_id && !masterLocations.some(location => location.id === form.preferred_location_id)" :value="form.preferred_location_id">{{ form.location }} (inactive)</option></select><small v-if="!masterLocations.length && !locationsLoading" class="inventory-help">Add an active location in the Locations master screen first.</small></label>
+        <label>Real estate developer<select v-model="form.developer_id" :disabled="!canManage"><option value="">Independent / not specified</option><option v-for="developer in developers" :key="developer.id" :value="developer.id">{{ developer.name }}</option><option v-if="form.developer_id && !developers.some(developer => developer.id === form.developer_id)" :value="form.developer_id">Inactive developer (linked)</option></select><small v-if="!developers.length">Add developer partners in Settings → Real estate developers.</small></label>
         <label>Price (EGP)<input v-model="form.price_egp" :disabled="!canManage" inputmode="decimal" pattern="[0-9]+(\.[0-9]{1,2})?" required placeholder="7250000.00"></label>
         <label>Bedrooms<input v-model="form.bedrooms" :disabled="!canManage" type="number" min="0" max="50"></label>
         <label>Bathrooms<input v-model="form.bathrooms" :disabled="!canManage" type="number" min="0" max="50"></label>

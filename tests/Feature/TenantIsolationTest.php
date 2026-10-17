@@ -64,9 +64,63 @@ class TenantIsolationTest extends TestCase
             ->patchJson("/api/v1/tasks/{$task->id}/complete")->assertNotFound();
     }
 
+    public function test_task_buckets_filter_open_work_and_return_useful_counts(): void
+    {
+        [$company, $owner] = $this->workspace('alpha');
+        $overdue = $this->task($company, $owner, 'Overdue follow-up', now()->subDay());
+        $today = $this->task($company, $owner, 'Call today', now()->addHours(2));
+        $upcoming = $this->task($company, $owner, 'Next week', now()->addDays(3));
+
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)
+            ->getJson('/api/v1/tasks?bucket=overdue')->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.id', $overdue->id)
+            ->assertJsonPath('task_counts.all', 3)
+            ->assertJsonPath('task_counts.overdue', 1)
+            ->assertJsonPath('task_counts.today', 1)
+            ->assertJsonPath('task_counts.upcoming', 1);
+
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)
+            ->getJson('/api/v1/tasks?bucket=today')->assertOk()->assertJsonPath('data.0.id', $today->id);
+        $this->actingAs($owner)->withHeader('X-Company-ID', $company->id)
+            ->getJson('/api/v1/tasks?bucket=upcoming')->assertOk()->assertJsonPath('data.0.id', $upcoming->id);
+    }
+
+    public function test_agent_task_buckets_only_include_tasks_assigned_to_them(): void
+    {
+        [$company, $owner] = $this->workspace('alpha');
+        $agent = User::factory()->create(['current_company_id' => $company->id]);
+        $otherAgent = User::factory()->create(['current_company_id' => $company->id]);
+        $company->memberships()->createMany([
+            ['user_id' => $agent->id, 'role' => 'agent', 'status' => 'active'],
+            ['user_id' => $otherAgent->id, 'role' => 'agent', 'status' => 'active'],
+        ]);
+        $ownTask = $this->task($company, $agent, 'My follow-up', now()->addHour());
+        $this->task($company, $otherAgent, 'Another agent follow-up', now()->addHour());
+
+        $this->actingAs($agent)->withHeader('X-Company-ID', $company->id)
+            ->getJson('/api/v1/tasks?bucket=today')->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('task_counts.all', 1)
+            ->assertJsonPath('data.0.id', $ownTask->id);
+    }
+
+    private function task(Company $company, User $assignee, string $title, $dueAt): FollowUpTask
+    {
+        return FollowUpTask::create([
+            'company_id' => $company->id,
+            'assigned_to' => $assignee->id,
+            'created_by' => $assignee->id,
+            'title' => $title,
+            'priority' => 'normal',
+            'due_at' => $dueAt,
+        ]);
+    }
+
     private function workspace(string $slug): array
     {
         $company = Company::create(['name' => ucfirst($slug), 'slug' => $slug]);
+        $this->enableCompanyTrial($company);
         $user = User::factory()->create(['current_company_id' => $company->id]);
         $company->memberships()->create(['user_id' => $user->id, 'role' => 'owner', 'status' => 'active']);
         $stage = PipelineStage::create(['company_id' => $company->id, 'name' => 'New lead', 'position' => 0]);

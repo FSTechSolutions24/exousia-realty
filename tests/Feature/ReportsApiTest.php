@@ -113,6 +113,7 @@ class ReportsApiTest extends TestCase
     private function workspace(string $role, string $name = 'Reports Realty'): array
     {
         $company = Company::create(['name' => $name, 'slug' => 'reports-'.uniqid()]);
+        $this->enableCompanyTrial($company);
         [$user] = $this->workspaceMember($company, $role);
         return [$company, $user];
     }

@@ -14,10 +14,31 @@ class TaskController extends Controller
 {
     public function index(Request $request, TenantContext $tenant)
     {
+        $filters = $request->validate([
+            'bucket' => ['nullable', Rule::in(['all', 'overdue', 'today', 'upcoming'])],
+            'open' => ['sometimes', 'boolean'],
+        ]);
         $query = FollowUpTask::where('company_id', $tenant->id())->with(['lead:id,name', 'assignee:id,name']);
         if ($request->attributes->get('membership')->role === 'agent') $query->where('assigned_to', $request->user()->id);
-        if ($request->boolean('open', true)) $query->whereNull('completed_at');
-        return response()->json($query->orderByRaw('completed_at is null desc')->orderBy('due_at')->paginate(20));
+        $isOpen = $request->boolean('open', true);
+        if ($isOpen) $query->whereNull('completed_at');
+
+        $counts = ['all' => (clone $query)->count()];
+        if ($isOpen) {
+            $counts['overdue'] = (clone $query)->where('due_at', '<', now()->startOfDay())->count();
+            $counts['today'] = (clone $query)->whereBetween('due_at', [now()->startOfDay(), now()->endOfDay()])->count();
+            $counts['upcoming'] = (clone $query)->where('due_at', '>', now()->endOfDay())->count();
+        } else {
+            $counts += ['overdue' => 0, 'today' => 0, 'upcoming' => 0];
+        }
+
+        $bucket = $filters['bucket'] ?? 'all';
+        if ($isOpen && $bucket === 'overdue') $query->where('due_at', '<', now()->startOfDay());
+        if ($isOpen && $bucket === 'today') $query->whereBetween('due_at', [now()->startOfDay(), now()->endOfDay()]);
+        if ($isOpen && $bucket === 'upcoming') $query->where('due_at', '>', now()->endOfDay());
+
+        $tasks = $query->orderByRaw('completed_at is null desc')->orderBy('due_at')->paginate(20)->toArray();
+        return response()->json($tasks + ['task_counts' => $counts]);
     }
 
     public function store(Request $request, TenantContext $tenant, AuditLogger $audit)

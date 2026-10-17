@@ -16,6 +16,12 @@ use App\Http\Controllers\Api\PreferredLocationController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\TeamController;
+use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\Api\PlatformAdminController;
+use App\Http\Controllers\Api\PlatformPaymentSettingsController;
+use App\Http\Controllers\Api\PropertyViewingController;
+use App\Http\Controllers\Api\RealEstateDeveloperController;
+use App\Http\Controllers\Api\CompanyBrandingController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -30,6 +36,8 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('v1')->middleware('web')->group(function () {
+    Route::get('/subscription-plans', [SubscriptionController::class, 'plans']);
+    Route::post('/subscriptions/paymob/callback', [SubscriptionController::class, 'paymobCallback'])->middleware('throttle:30,1')->name('subscriptions.paymob-callback');
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
     Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('/auth/invitations/accept', InvitationAcceptanceController::class)->middleware('throttle:10,1');
@@ -40,13 +48,34 @@ Route::prefix('v1')->middleware('web')->group(function () {
         ->middleware('signed')->name('auth.email.verify');
 
     Route::middleware('auth:sanctum')->group(function () {
+        Route::middleware(['verified', 'platform-admin'])->prefix('platform')->group(function () {
+            Route::get('/bootstrap', [PlatformAdminController::class, 'bootstrap']);
+            Route::get('/overview', [PlatformAdminController::class, 'overview']);
+            Route::get('/paymob-settings', [PlatformPaymentSettingsController::class, 'show']);
+            Route::put('/paymob-settings', [PlatformPaymentSettingsController::class, 'update']);
+            Route::get('/companies', [PlatformAdminController::class, 'companies']);
+            Route::post('/companies/{company}/suspend', [PlatformAdminController::class, 'suspend']);
+            Route::post('/companies/{company}/activate', [PlatformAdminController::class, 'activate']);
+            Route::post('/companies/{company}/renew', [PlatformAdminController::class, 'renew']);
+        });
         Route::post('/auth/logout', [AuthController::class, 'logout']);
         Route::post('/companies/{company}/switch', [BootstrapController::class, 'switchCompany']);
 
         Route::middleware('verified')->group(function () {
           Route::middleware('tenant')->group(function () {
             Route::get('/bootstrap', BootstrapController::class);
+            Route::get('/company/logo', [CompanyBrandingController::class, 'show'])->name('company.logo');
+            Route::get('/subscriptions', [SubscriptionController::class, 'status']);
+            Route::post('/subscriptions/free-trial', [SubscriptionController::class, 'startFreeTrial']);
+            Route::post('/subscriptions/checkout', [SubscriptionController::class, 'checkout'])->middleware('throttle:5,1');
+            Route::middleware('subscription')->group(function () {
             Route::get('/dashboard', DashboardController::class);
+            Route::post('/company/logo', [CompanyBrandingController::class, 'store']);
+            Route::delete('/company/logo', [CompanyBrandingController::class, 'destroy']);
+            Route::get('/developers', [RealEstateDeveloperController::class, 'index']);
+            Route::post('/developers', [RealEstateDeveloperController::class, 'store']);
+            Route::put('/developers/{developer}', [RealEstateDeveloperController::class, 'update']);
+            Route::delete('/developers/{developer}', [RealEstateDeveloperController::class, 'destroy']);
             Route::get('/inventory', [InventoryController::class, 'index']);
             Route::post('/inventory', [InventoryController::class, 'store']);
             Route::get('/inventory/{listing}', [InventoryController::class, 'show']);
@@ -77,6 +106,8 @@ Route::prefix('v1')->middleware('web')->group(function () {
             Route::post('/leads/import', [LeadImportController::class, 'import']);
             Route::get('/leads/{lead}', [LeadController::class, 'show']);
             Route::get('/leads/{lead}/matches', [LeadController::class, 'matches']);
+            Route::post('/leads/{lead}/viewings', [PropertyViewingController::class, 'store']);
+            Route::patch('/leads/{lead}/viewings/{viewing}', [PropertyViewingController::class, 'update']);
             Route::put('/leads/{lead}', [LeadController::class, 'update']);
             Route::delete('/leads/{lead}', [LeadController::class, 'archive']);
             Route::post('/leads/{lead}/restore', [LeadController::class, 'restore']);
@@ -92,6 +123,7 @@ Route::prefix('v1')->middleware('web')->group(function () {
             Route::post('/team/members', [TeamController::class, 'store']);
             Route::patch('/team/members/{membership}', [TeamController::class, 'update']);
             Route::delete('/team/invitations/{invitation}', [TeamController::class, 'revoke']);
+            });
           });
         });
     });

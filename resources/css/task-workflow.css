@@ -1,0 +1,11 @@
+.task-tabs{flex-wrap:wrap;gap:clamp(12px,2.5vw,25px)}
+.task-tabs button{white-space:nowrap}
+.task-tabs button:nth-child(2) span{background:#fff0ed;color:#b64d42}
+.task-tabs button:nth-child(3) span{background:#f8f1e3;color:#9a7946}
+.task-tabs button span{min-width:21px;display:inline-grid;place-items:center}
+.task-priority{border:1px solid transparent}
+.task-body .priority-high{background:#fff0ed;color:#b64d42}
+.task-body .priority-normal{background:#f5f1e6;color:#947744}
+.task-body .priority-low{background:#edf2ef;color:#668273}
+.large-empty .button{margin-top:13px}
+@media(max-width:560px){.task-tabs{gap:15px;padding-right:14px;padding-left:14px}.task-tabs button{font-size:9px}.full-task-list article{gap:10px;padding:15px 13px}.task-body>div{flex-wrap:wrap}.full-task-list time{font-size:8px}}

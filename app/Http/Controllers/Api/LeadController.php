@@ -80,7 +80,10 @@ class LeadController extends Controller
     public function show(Request $request, TenantContext $tenant, int $lead)
     {
         $lead = $this->visibleQuery($request, $tenant)->whereKey($lead)->firstOrFail();
-        return response()->json($lead->load(['stage', 'assignee:id,name,email', 'activities.user:id,name', 'tasks.assignee:id,name']));
+        return response()->json($lead->load([
+            'stage', 'assignee:id,name,email', 'activities.user:id,name', 'tasks.assignee:id,name',
+            'viewings.scheduler:id,name',
+        ]));
     }
 
     public function matches(Request $request, TenantContext $tenant, int $lead, PropertyMatchingService $matching)

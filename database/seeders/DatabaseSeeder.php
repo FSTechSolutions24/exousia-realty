@@ -7,6 +7,7 @@ use App\Models\FollowUpTask;
 use App\Models\Lead;
 use App\Models\LeadActivity;
 use App\Models\PipelineStage;
+use App\Models\SubscriptionPlan;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -20,10 +21,22 @@ class DatabaseSeeder extends Seeder
      */
     public function run()
     {
+        $this->call(SubscriptionPlansSeeder::class);
+
         $company = Company::create(['name' => 'Nile Gate Realty (Demo)', 'slug' => 'nile-gate-demo', 'phone' => '01000000000']);
         $other = Company::create(['name' => 'Palm Key Properties (Demo)', 'slug' => 'palm-key-demo', 'brand_color' => '#6f8054']);
 
         $this->call(PreferredLocationSeeder::class);
+
+        $trialPlan = SubscriptionPlan::where('slug', 'free-trial')->firstOrFail();
+        foreach ([$company, $other] as $trialCompany) {
+            $startsAt = now();
+            $trialCompany->subscriptions()->create([
+                'plan_id' => $trialPlan->id, 'status' => 'trialing', 'billing_cycle' => 'trial', 'is_free_trial' => true,
+                'starts_at' => $startsAt, 'ends_at' => $startsAt->copy()->addDays(14),
+                'trial_started_at' => $startsAt, 'trial_ends_at' => $startsAt->copy()->addDays(14),
+            ]);
+        }
 
         $owner = User::create(['name' => 'Mariam Nassar', 'email' => 'owner@demo.exousia.test', 'password' => Hash::make('password'), 'phone' => '01010000001', 'current_company_id' => $company->id, 'email_verified_at' => now()]);
         $agent = User::create(['name' => 'Omar Adel', 'email' => 'agent@demo.exousia.test', 'password' => Hash::make('password'), 'phone' => '01110000002', 'current_company_id' => $company->id, 'email_verified_at' => now()]);

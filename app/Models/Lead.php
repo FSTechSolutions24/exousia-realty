@@ -30,4 +30,5 @@ class Lead extends Model
     public function activities() { return $this->hasMany(LeadActivity::class)->latest(); }
     public function tasks() { return $this->hasMany(FollowUpTask::class); }
     public function deals() { return $this->hasMany(Deal::class); }
+    public function viewings() { return $this->hasMany(PropertyViewing::class)->orderByDesc('scheduled_at'); }
 }

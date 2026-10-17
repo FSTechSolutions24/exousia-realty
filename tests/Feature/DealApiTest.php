@@ -225,6 +225,7 @@ class DealApiTest extends TestCase
     private function workspace(string $role, string $name = 'Deal Test Realty'): array
     {
         $company = Company::create(['name' => $name, 'slug' => 'deal-'.uniqid()]);
+        $this->enableCompanyTrial($company);
         [$user] = $this->workspaceMember($company, $role);
         return [$company, $user, $this->lead($company, $user)];
     }

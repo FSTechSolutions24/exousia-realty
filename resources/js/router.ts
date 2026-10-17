@@ -18,6 +18,14 @@ import ReportsView from './views/ReportsView.vue'
 import CommissionsView from './views/CommissionsView.vue'
 import CommissionOrderView from './views/CommissionOrderView.vue'
 import DealClosingDocumentView from './views/DealClosingDocumentView.vue'
+import LandingView from './views/LandingView.vue'
+import HomeTwoView from './views/HomeTwoView.vue'
+import HomeThreeView from './views/HomeThreeView.vue'
+import PlansView from './views/PlansView.vue'
+import BillingView from './views/BillingView.vue'
+import PlatformAdminView from './views/PlatformAdminView.vue'
+import RealEstateDevelopersView from './views/RealEstateDevelopersView.vue'
+import CompanyProfileView from './views/CompanyProfileView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -28,7 +36,13 @@ const router = createRouter({
     { path: '/forgot-password', component: ForgotPasswordView, meta: { guest: true, allowAuthenticated: true } },
     { path: '/reset-password', component: ResetPasswordView, meta: { guest: true, allowAuthenticated: true } },
     { path: '/verify-email', component: VerifyEmailView, meta: { guest: true, allowAuthenticated: true } },
-    { path: '/', component: DashboardView },
+    { path: '/', component: LandingView, meta: { public: true } },
+    { path: '/home2', component: HomeTwoView, meta: { public: true } },
+    { path: '/home3', component: HomeThreeView, meta: { public: true } },
+    { path: '/plans', component: PlansView, meta: { public: true } },
+    { path: '/billing', component: BillingView },
+    { path: '/platform', component: PlatformAdminView },
+    { path: '/dashboard', component: DashboardView },
     { path: '/leads', component: LeadsView },
     { path: '/leads/:id', component: LeadDetailView },
     { path: '/tasks', component: TasksView },
@@ -39,6 +53,8 @@ const router = createRouter({
     { path: '/commissions/:id/order', component: CommissionOrderView },
     { path: '/reports', component: ReportsView },
     { path: '/settings/locations', component: PreferredLocationsView },
+    { path: '/settings/developers', component: RealEstateDevelopersView },
+    { path: '/settings/company', component: CompanyProfileView },
     { path: '/team', component: TeamView },
     { path: '/:section', component: ComingSoonView },
   ],
